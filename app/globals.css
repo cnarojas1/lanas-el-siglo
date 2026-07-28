@@ -322,6 +322,7 @@ footer div a:hover::after {
 
 .product-card {
   min-width: 0;
+  padding-bottom: 4px;
 }
 
 .product-image,
@@ -331,10 +332,11 @@ footer div a:hover::after {
 }
 
 .product-image {
-  background-size: 400% 100%;
-  aspect-ratio: 1 / 1.08;
+  background-size: 400% 200%;
+  aspect-ratio: 3 / 4;
   border-radius: 22px;
   border: 1px solid var(--line);
+  background-color: #f4eee4;
   position: relative;
   overflow: hidden;
   transition: transform 240ms ease, box-shadow 240ms ease;
@@ -733,7 +735,7 @@ footer small {
 .cart-thumb {
   width: 92px;
   height: 108px;
-  background-size: 400% 100%;
+  background-size: 400% 200%;
   border-radius: 12px;
   border: 1px solid var(--line);
 }

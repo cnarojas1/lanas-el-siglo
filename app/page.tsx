@@ -15,14 +15,14 @@ type Product = {
 };
 
 const products: Product[] = [
-  { id: 1, name: "Merino Natural", category: "Lanas clásica", color: "Crema", price: 6990, weight: "100 g", fiber: "Lana clásica suave", imagePosition: "0% center" },
-  { id: 2, name: "Nube Rosada", category: "Lanas baby", color: "Rosa", price: 5490, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "33% center" },
-  { id: 3, name: "Bosque Suave", category: "Lanas batik", color: "Verde", price: 6990, weight: "100 g", fiber: "Coloración batik", imagePosition: "66% center" },
-  { id: 4, name: "Tierra Andina", category: "Lanas con % lana", color: "Terracota", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "100% center" },
-  { id: 5, name: "Arena Natural", category: "Lanas clásica", color: "Arena", price: 4990, weight: "100 g", fiber: "Lana clásica versátil", imagePosition: "0% center" },
-  { id: 6, name: "Malva Serena", category: "Lanas Fantasía", color: "Malva", price: 3990, weight: "100 g", fiber: "Textura de fantasía", imagePosition: "33% center" },
-  { id: 7, name: "Oliva Campestre", category: "Lanas con % lana", color: "Oliva", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "66% center" },
-  { id: 8, name: "Canela Cálida", category: "Lanas baby", color: "Canela", price: 3990, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "100% center" },
+  { id: 1, name: "Merino Natural", category: "Lanas clásica", color: "Crema", price: 6990, weight: "100 g", fiber: "Lana clásica suave", imagePosition: "0% 0%" },
+  { id: 2, name: "Nube Rosada", category: "Lanas baby", color: "Rosa", price: 5490, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "33.333% 0%" },
+  { id: 3, name: "Bosque Suave", category: "Lanas batik", color: "Verde", price: 6990, weight: "100 g", fiber: "Coloración batik", imagePosition: "66.667% 0%" },
+  { id: 4, name: "Tierra Andina", category: "Lanas con % lana", color: "Terracota", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "100% 0%" },
+  { id: 5, name: "Arena Natural", category: "Lanas clásica", color: "Arena", price: 4990, weight: "100 g", fiber: "Lana clásica versátil", imagePosition: "0% 100%" },
+  { id: 6, name: "Malva Serena", category: "Lanas Fantasía", color: "Malva", price: 3990, weight: "100 g", fiber: "Textura de fantasía", imagePosition: "33.333% 100%" },
+  { id: 7, name: "Oliva Campestre", category: "Lanas con % lana", color: "Oliva", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "66.667% 100%" },
+  { id: 8, name: "Canela Cálida", category: "Lanas baby", color: "Canela", price: 3990, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "100% 100%" },
 ];
 
 const categories = ["Todas", "Lanas clásica", "Lanas baby", "Lanas batik", "Lanas Fantasía", "Lanas con % lana"];
