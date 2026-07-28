@@ -86,7 +86,7 @@ export default function Home() {
 
       <header className="site-header">
         <a className="brand brand-logo" href="#inicio" aria-label="Lanería El Siglo, inicio">
-          <Image src="/logo-el-siglo.jpg" alt="Lanería El Siglo" width={1600} height={694} priority />
+          <Image src="/logo-el-siglo.jpg" alt="Lanería El Siglo" width={1600} height={694} priority unoptimized />
         </a>
         <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen} aria-label="Abrir menú">
           <span />
@@ -209,7 +209,7 @@ export default function Home() {
 
       <footer>
         <a className="brand brand-logo footer-logo" href="#inicio">
-          <Image src="/logo-el-siglo.jpg" alt="Lanería El Siglo" width={1600} height={694} />
+          <Image src="/logo-el-siglo.jpg" alt="Lanería El Siglo" width={1600} height={694} unoptimized />
         </a>
         <p>Fibras, color y calidez para cada proyecto.</p>
         <div><a href="#catalogo">Catálogo</a><a href="#nosotros">Nosotros</a></div>
