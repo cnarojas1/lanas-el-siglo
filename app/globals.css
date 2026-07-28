@@ -82,6 +82,7 @@ h3 {
   display: inline-flex;
   align-items: center;
   width: clamp(180px, 19vw, 290px);
+  line-height: 0;
 }
 
 .brand-logo img {
@@ -89,6 +90,15 @@ h3 {
   width: 100%;
   height: auto;
   mix-blend-mode: multiply;
+}
+
+.site-header .brand-logo {
+  height: 72px;
+  overflow: hidden;
+}
+
+.site-header .brand-logo img {
+  flex: 0 0 auto;
 }
 
 .footer-logo {
@@ -876,6 +886,9 @@ footer small {
   }
   .brand-logo {
     width: 150px;
+  }
+  .site-header .brand-logo {
+    height: 56px;
   }
   .menu-button {
     display: flex;

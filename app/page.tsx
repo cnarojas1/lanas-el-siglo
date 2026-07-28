@@ -14,18 +14,64 @@ type Product = {
   imagePosition: string;
 };
 
-const products: Product[] = [
-  { id: 1, name: "Merino Natural", category: "Lanas clásica", color: "Crema", price: 6990, weight: "100 g", fiber: "Lana clásica suave", imagePosition: "0% 0%" },
-  { id: 2, name: "Nube Rosada", category: "Lanas baby", color: "Rosa", price: 5490, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "33.333% 0%" },
-  { id: 3, name: "Bosque Suave", category: "Lanas batik", color: "Verde", price: 6990, weight: "100 g", fiber: "Coloración batik", imagePosition: "66.667% 0%" },
-  { id: 4, name: "Tierra Andina", category: "Lanas con % lana", color: "Terracota", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "100% 0%" },
-  { id: 5, name: "Arena Natural", category: "Lanas clásica", color: "Arena", price: 4990, weight: "100 g", fiber: "Lana clásica versátil", imagePosition: "0% 100%" },
-  { id: 6, name: "Malva Serena", category: "Lanas Fantasía", color: "Malva", price: 3990, weight: "100 g", fiber: "Textura de fantasía", imagePosition: "33.333% 100%" },
-  { id: 7, name: "Oliva Campestre", category: "Lanas con % lana", color: "Oliva", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "66.667% 100%" },
-  { id: 8, name: "Canela Cálida", category: "Lanas baby", color: "Canela", price: 3990, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "100% 100%" },
+const productVariants = [
+  { color: "Crema", imagePosition: "0% 0%" },
+  { color: "Rosa", imagePosition: "33.333% 0%" },
+  { color: "Batik salvia", imagePosition: "66.667% 0%" },
+  { color: "Terracota", imagePosition: "100% 0%" },
+  { color: "Arena", imagePosition: "0% 100%" },
+  { color: "Malva", imagePosition: "33.333% 100%" },
+  { color: "Oliva", imagePosition: "66.667% 100%" },
+  { color: "Canela", imagePosition: "100% 100%" },
 ];
 
-const categories = ["Todas", "Lanas clásica", "Lanas baby", "Lanas batik", "Lanas Fantasía", "Lanas con % lana"];
+const categoryCatalog = [
+  {
+    category: "Lanas clásica",
+    fiber: "Acrílico suave de uso diario",
+    basePrice: 3990,
+    names: ["Clásica Nieve", "Clásica Rosa", "Clásica Salvia", "Clásica Terracota", "Clásica Arena", "Clásica Malva", "Clásica Oliva", "Clásica Canela"],
+  },
+  {
+    category: "Lanas baby",
+    fiber: "Fibra hipoalergénica y delicada",
+    basePrice: 4490,
+    names: ["Baby Nube", "Baby Rosa", "Baby Jardín", "Baby Cobre", "Baby Trigo", "Baby Lavanda", "Baby Bosque", "Baby Caramelo"],
+  },
+  {
+    category: "Lanas batik",
+    fiber: "Hebra multicolor de cambio gradual",
+    basePrice: 5990,
+    names: ["Batik Marfil", "Batik Flor", "Batik Salvia", "Batik Otoño", "Batik Duna", "Batik Malva", "Batik Olivar", "Batik Canela"],
+  },
+  {
+    category: "Lanas Fantasía",
+    fiber: "Textura decorativa de alto volumen",
+    basePrice: 5490,
+    names: ["Fantasía Polar", "Fantasía Pétalo", "Fantasía Menta", "Fantasía Cobre", "Fantasía Arena", "Fantasía Malva", "Fantasía Musgo", "Fantasía Calabaza"],
+  },
+  {
+    category: "Lanas con % lana",
+    fiber: "Mezcla abrigada con lana natural",
+    basePrice: 6990,
+    names: ["Andina Cruda", "Andina Rosada", "Andina Salvia", "Andina Terracota", "Andina Arena", "Andina Malva", "Andina Oliva", "Andina Canela"],
+  },
+];
+
+const products: Product[] = categoryCatalog.flatMap((group, groupIndex) =>
+  productVariants.map((variant, variantIndex) => ({
+    id: groupIndex * productVariants.length + variantIndex + 1,
+    name: group.names[variantIndex],
+    category: group.category,
+    color: variant.color,
+    price: group.basePrice + variantIndex * 200,
+    weight: "100 g",
+    fiber: group.fiber,
+    imagePosition: variant.imagePosition,
+  })),
+);
+
+const categories = ["Todas", ...categoryCatalog.map((group) => group.category)];
 
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
