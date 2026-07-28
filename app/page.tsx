@@ -15,17 +15,17 @@ type Product = {
 };
 
 const products: Product[] = [
-  { id: 1, name: "Merino Natural", category: "Merino", color: "Crema", price: 6990, weight: "100 g", fiber: "100% lana merino", imagePosition: "0% center" },
-  { id: 2, name: "Nube Rosada", category: "Algodón", color: "Rosa", price: 5490, weight: "100 g", fiber: "Algodón peinado", imagePosition: "33% center" },
-  { id: 3, name: "Bosque Suave", category: "Merino", color: "Verde", price: 6990, weight: "100 g", fiber: "100% lana merino", imagePosition: "66% center" },
-  { id: 4, name: "Tierra Andina", category: "Alpaca", color: "Terracota", price: 7990, weight: "100 g", fiber: "Alpaca y merino", imagePosition: "100% center" },
-  { id: 5, name: "Arena Natural", category: "Algodón", color: "Arena", price: 4990, weight: "100 g", fiber: "Algodón reciclado", imagePosition: "0% center" },
-  { id: 6, name: "Malva Serena", category: "Acrílica", color: "Malva", price: 3990, weight: "100 g", fiber: "Acrílico premium", imagePosition: "33% center" },
-  { id: 7, name: "Oliva Campestre", category: "Alpaca", color: "Oliva", price: 7990, weight: "100 g", fiber: "Alpaca y merino", imagePosition: "66% center" },
-  { id: 8, name: "Canela Cálida", category: "Acrílica", color: "Canela", price: 3990, weight: "100 g", fiber: "Acrílico premium", imagePosition: "100% center" },
+  { id: 1, name: "Merino Natural", category: "Lanas clásica", color: "Crema", price: 6990, weight: "100 g", fiber: "Lana clásica suave", imagePosition: "0% center" },
+  { id: 2, name: "Nube Rosada", category: "Lanas baby", color: "Rosa", price: 5490, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "33% center" },
+  { id: 3, name: "Bosque Suave", category: "Lanas batik", color: "Verde", price: 6990, weight: "100 g", fiber: "Coloración batik", imagePosition: "66% center" },
+  { id: 4, name: "Tierra Andina", category: "Lanas con % lana", color: "Terracota", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "100% center" },
+  { id: 5, name: "Arena Natural", category: "Lanas clásica", color: "Arena", price: 4990, weight: "100 g", fiber: "Lana clásica versátil", imagePosition: "0% center" },
+  { id: 6, name: "Malva Serena", category: "Lanas Fantasía", color: "Malva", price: 3990, weight: "100 g", fiber: "Textura de fantasía", imagePosition: "33% center" },
+  { id: 7, name: "Oliva Campestre", category: "Lanas con % lana", color: "Oliva", price: 7990, weight: "100 g", fiber: "Mezcla con lana", imagePosition: "66% center" },
+  { id: 8, name: "Canela Cálida", category: "Lanas baby", color: "Canela", price: 3990, weight: "100 g", fiber: "Suave para tejidos de bebé", imagePosition: "100% center" },
 ];
 
-const categories = ["Todas", "Merino", "Algodón", "Alpaca", "Acrílica"];
+const categories = ["Todas", "Lanas clásica", "Lanas baby", "Lanas batik", "Lanas Fantasía", "Lanas con % lana"];
 
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
@@ -127,7 +127,7 @@ export default function Home() {
         </div>
 
         <div className="catalog-tools">
-          <div className="category-list" aria-label="Filtrar por fibra">
+          <div className="category-list" aria-label="Filtrar por categoría">
             {categories.map((item) => (
               <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>
                 {item}
