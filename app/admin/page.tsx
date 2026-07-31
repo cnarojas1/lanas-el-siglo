@@ -923,6 +923,7 @@ function MediaPanel({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(false);
+  const [search, setSearch] = useState("");
 
   async function refresh() {
     try {
@@ -1028,6 +1029,17 @@ function MediaPanel({
         Copia la ruta de una imagen y pégala en el campo &quot;Imagen&quot; de la ficha de producto.
       </p>
 
+      {items.length > 0 && (
+        <input
+          type="text"
+          placeholder="Buscar por nombre (ej: 'Favori', 'IMG')"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="admin-media-search"
+          aria-label="Filtrar medios"
+        />
+      )}
+
       <label
         className={dragging ? "admin-dropzone admin-dropzone-active" : "admin-dropzone"}
         onDragLeave={(event) => {
@@ -1063,8 +1075,16 @@ function MediaPanel({
       ) : items.length === 0 ? (
         <p className="admin-media-empty">Todavía no hay imágenes cargadas.</p>
       ) : (
-        <div className="admin-media-grid">
-          {items.map((item) => (
+        <>
+          {search && (
+            <p className="admin-media-search-result">
+              {items.filter((i) => i.filename.toLowerCase().includes(search.toLowerCase())).length} resultado(s)
+            </p>
+          )}
+          <div className="admin-media-grid">
+            {items
+              .filter((i) => i.filename.toLowerCase().includes(search.toLowerCase()))
+              .map((item) => (
             <figure className="admin-media-card" key={item.kv_key}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img alt={item.filename} loading="lazy" src={item.url} />
@@ -1077,8 +1097,9 @@ function MediaPanel({
                 <button onClick={() => remove(item)} type="button">Eliminar</button>
               </div>
             </figure>
-          ))}
-        </div>
+              ))}
+          </div>
+        </>
       )}
     </section>
   );
