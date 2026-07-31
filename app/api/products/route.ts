@@ -1,98 +1,62 @@
-import { json } from 'next/server';
-
-interface Env {
-  DB?: D1Database;
-}
+import { env } from "cloudflare:workers";
 
 /**
  * GET /api/products
- * Obtiene lista de productos de la base de datos D1
+ * Lista productos desde la base de datos D1.
+ * Filtros opcionales: ?category=...&search=...&limit=50&offset=0
  */
 export async function GET(request: Request) {
-  // Obtener parámetros de query
   const { searchParams } = new URL(request.url);
-  const category = searchParams.get('category');
-  const search = searchParams.get('search');
-  const limit = parseInt(searchParams.get('limit') || '50', 10);
-  const offset = parseInt(searchParams.get('offset') || '0', 10);
+  const category = searchParams.get("category");
+  const search = searchParams.get("search");
+  const limit = Math.min(Number(searchParams.get("limit")) || 50, 100);
+  const offset = Number(searchParams.get("offset")) || 0;
+
+  if (!env.DB) {
+    return Response.json(
+      { error: "La base de datos D1 no está disponible en este entorno." },
+      { status: 503 }
+    );
+  }
+
+  const where: string[] = [];
+  const values: unknown[] = [];
+
+  if (category) {
+    where.push("category = ?");
+    values.push(category);
+  }
+
+  if (search) {
+    where.push("(name LIKE ? OR category LIKE ?)");
+    values.push(`%${search}%`, `%${search}%`);
+  }
+
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   try {
-    // Este es un ejemplo - en producción obtendrías el DB del contexto
-    // const db = (env as Env).DB;
+    const { results } = await env.DB.prepare(
+      `SELECT id, name, category, color, fiber, weight, length, needles, crochet,
+              price, kilo_price, dozen_price, image_source, color_count
+       FROM products ${clause}
+       ORDER BY category, name
+       LIMIT ? OFFSET ?`
+    )
+      .bind(...values, limit, offset)
+      .all();
 
-    // Por ahora retornamos datos estáticos
-    // Una vez conectado D1, cambiarás a:
-    // const result = await db.prepare('SELECT * FROM products WHERE ...');
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) AS total FROM products ${clause}`
+    )
+      .bind(...values)
+      .first<{ total: number }>();
 
-    const products = [
-      {
-        id: 1,
-        name: 'Sweet Baby',
-        category: 'Lanas baby',
-        price: 16425,
-        color: '15 colores',
-        fiber: '100% Acrilico',
-        weight: '100g',
-        length: '360m',
-      },
-      {
-        id: 2,
-        name: 'Super Baby',
-        category: 'Lanas baby',
-        price: 13425,
-        color: '34 colores',
-        fiber: '100% Acrilico',
-        weight: '100g',
-        length: '340m',
-      },
-      {
-        id: 3,
-        name: 'Atlas',
-        category: 'Lanas clásica',
-        price: 13430,
-        color: '41 colores',
-        fiber: '100% Acrilico',
-        weight: '100g',
-        length: '130m',
-      },
-    ];
-
-    // Aplicar filtros
-    let filtered = products;
-
-    if (category) {
-      filtered = filtered.filter((p) => p.category === category);
-    }
-
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(searchLower) ||
-          p.category.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Aplicar paginación
-    const paginated = filtered.slice(offset, offset + limit);
-
-    return json({
-      success: true,
-      data: paginated,
-      pagination: {
-        total: filtered.length,
-        limit,
-        offset,
-      },
+    return Response.json({
+      data: results,
+      pagination: { total: total?.total ?? 0, limit, offset },
     });
   } catch (error) {
-    console.error('Error fetching products:', error);
-    return json(
-      {
-        success: false,
-        error: 'Failed to fetch products',
-      },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Error inesperado";
+    return Response.json({ error: message }, { status: 500 });
   }
 }

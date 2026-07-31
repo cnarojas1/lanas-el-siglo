@@ -4,21 +4,23 @@ Una plataforma de ecommerce para venta de lanas y fibras de tejido, construida c
 
 Basado en [vinext](https://github.com/cloudflare/vinext) - full-stack starter para Cloudflare.
 
-## 🚀 Quick Deploy
+## Sitio en vivo
 
-Ver [DEPLOYMENT.md](./DEPLOYMENT.md) para guía completa de despliegue en:
-- GitHub (repositorio)
-- Cloudflare Pages (frontend)
-- Cloudflare Workers (backend API)
-- Cloudflare D1 (base de datos)
-- Cloudflare R2 (almacenamiento)
+https://lanas-el-siglo.cnarojas1.workers.dev
+
+Desplegado como Cloudflare Worker con assets estáticos, con base de datos D1.
+Ver [DEPLOYMENT.md](./DEPLOYMENT.md) para desplegar, y para la lista de lo que
+todavía queda pendiente.
+
+```bash
+npx vinext deploy
+```
 
 ## Prerequisites
 
 - Node.js `>=22.13.0`
 - Cuenta en [Cloudflare](https://cloudflare.com)
 - Cuenta en [GitHub](https://github.com)
-- (Linux con `flock`, `curl`, y GNU `timeout` para CI/CD)
 
 ## Sites Lifecycle
 

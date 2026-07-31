@@ -1,10 +1,9 @@
 name = "lanas-el-siglo"
-type = "javascript"
 workers_dev = true
 compatibility_date = "2026-05-15"
-compatibility_flags = ["nodejs_compat"]
+# nodejs_compat lo agrega vinext durante el build; no lo repitas aqui.
 
-# Base de datos D1 para órdenes, inventario, usuarios
+# Base de datos D1 para ordenes, inventario, usuarios
 [[d1_databases]]
 binding = "DB"
 database_name = "lanas-el-siglo-db"
@@ -14,9 +13,3 @@ database_id = "2edb6cb8-e9e1-443a-aab9-be50396ae5db"
 [vars]
 SHOP_NAME = "Lanas el Siglo"
 CURRENCY = "CLP"
-
-[env.production]
-name = "lanas-el-siglo-prod"
-
-[env.preview]
-name = "lanas-el-siglo-preview"
