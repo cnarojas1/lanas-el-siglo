@@ -97,6 +97,9 @@ vacía, la home lo usa para no quedar sin catálogo.
 
 `GET /api/products` — lee de D1. Acepta `?category=`, `?search=`, `?limit=`, `?offset=`.
 
+`POST /api/orders` — registra un pedido (público). `GET /api/orders` — listado
+para el panel, requiere `ADMIN_TOKEN`.
+
 ```bash
 curl "https://lanas-el-siglo.cnarojas1.workers.dev/api/products?limit=3"
 ```
@@ -132,6 +135,7 @@ Es una contraseña compartida, no cuentas por persona. Las secciones
 | Banners, Páginas, Preguntas frecuentes | D1 (`site_content`) |
 | Listado de productos (precio, nombre, categoría, descripción, visibilidad, imagen) | D1 (`products`) |
 | Medios | KV (binario) + D1 (`media`) |
+| Pedidos | D1 (`orders`, `order_items`) — solo lectura |
 | Categorías, Marcas, Contactos, Cotizaciones, Reportes, Administradores, Roles, Datos del sitio, SEO | Maqueta: solo la sesión actual |
 
 Un producto con `visible = 0` desaparece de la tienda pero sigue en el panel.
@@ -150,15 +154,42 @@ suficiente para el catálogo actual.
 Las claves llevan un prefijo aleatorio, así que dos archivos con el mismo nombre
 no se pisan y las imágenes se sirven con caché inmutable de un año.
 
+## Pedidos
+
+El carrito ya no es solo del navegador: "Confirmar pedido" pide nombre, correo,
+teléfono y dirección, y `POST /api/orders` registra el pedido en D1 y descuenta
+el inventario. El cliente recibe un número de pedido; los pedidos se ven en
+**Solicitudes → Pedidos** del panel (requiere la contraseña).
+
+Dos garantías que conviene conocer:
+
+**El precio nunca se toma del navegador.** La API lee el precio de D1 al
+registrar el pedido, así que alterar el carrito desde las herramientas del
+navegador no cambia el total.
+
+**No se puede sobrevender.** `inventory.quantity_available` tiene
+`CHECK (quantity_available >= 0)`. Como el pedido, sus líneas y los descuentos
+de stock van en un solo `batch()` de D1 —es decir, una transacción—, si el stock
+no alcanza la restricción aborta el pedido completo en vez de dejar inventario
+negativo. La imposibilidad de sobrevender está en el esquema, no en el código.
+
+Verificado con 12 pedidos simultáneos contra 5 unidades: exactamente 5 se
+registraron, 7 fueron rechazados y el stock terminó en 0.
+
+El pedido queda en estado `pending`. **No hay cobro**: el flujo actual asume que
+se coordina el pago por fuera. El botón para copiar el pedido a WhatsApp sigue
+disponible como alternativa.
+
 ## Pendiente
 
 Lo que todavía NO está hecho, en orden de importancia:
 
-1. **El carrito es solo de navegador.** Vive en estado de React; no crea filas en
-   `orders` ni `order_items`. El pedido se envía copiándolo a WhatsApp.
-2. **No hay checkout ni pagos.**
-3. **El inventario no se descuenta.** La tabla `inventory` tiene stock inicial,
-   pero nada la consulta ni la actualiza al comprar.
+1. **No hay cobro en línea.** El pedido se registra en estado `pending` y el
+   pago se coordina aparte. Falta integrar una pasarela.
+2. **No se avisa por correo.** Ni al cliente ni a la tienda: hay que mirar el
+   panel para enterarse de un pedido nuevo.
+3. **El estado del pedido no se puede cambiar** desde el panel; los pedidos se
+   ven pero no se gestionan.
 4. **El panel usa una contraseña compartida**, no cuentas por persona con
    registro de quién cambió qué.
 5. **No hay CI/CD.** El deploy es manual con `npx vinext deploy`.

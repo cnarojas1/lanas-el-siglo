@@ -24,6 +24,10 @@ export default function Storefront({ products, categories, siteContent }: Storef
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ reference: string; total: number } | null>(null);
+  const [form, setForm] = useState({ name: "", email: "", phone: "", address: "", notes: "" });
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -52,6 +56,38 @@ export default function Storefront({ products, categories, siteContent }: Storef
       else updated[id] = next;
       return updated;
     });
+  }
+
+  async function submitOrder(event: React.FormEvent) {
+    event.preventDefault();
+    setSending(true);
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          items: cartItems.map((product) => ({ id: product.id, quantity: cart[product.id] })),
+        }),
+      });
+
+      const body = (await response.json()) as { error?: string; reference?: string; total?: number };
+
+      if (!response.ok) {
+        setNotice(body.error ?? "No se pudo enviar el pedido.");
+        return;
+      }
+
+      setConfirmation({ reference: body.reference ?? "", total: body.total ?? 0 });
+      setCart({});
+      setCheckoutOpen(false);
+      setForm({ name: "", email: "", phone: "", address: "", notes: "" });
+    } catch {
+      setNotice("No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.");
+    } finally {
+      setSending(false);
+    }
   }
 
   async function copyOrder() {
@@ -232,7 +268,16 @@ export default function Storefront({ products, categories, siteContent }: Storef
           <button onClick={() => setCartOpen(false)} aria-label="Cerrar">×</button>
         </div>
         <div className="cart-content">
-          {cartItems.length === 0 ? (
+          {confirmation ? (
+            <div className="order-done">
+              <span>✓</span>
+              <h3>Pedido recibido</h3>
+              <p>Tu número de pedido es <strong>#{confirmation.reference}</strong>.</p>
+              <p>Total: <strong>{money.format(confirmation.total)}</strong></p>
+              <p className="order-done-note">Te contactaremos al correo indicado para coordinar el despacho y el pago.</p>
+              <button onClick={() => { setConfirmation(null); setCartOpen(false); }} type="button">Seguir comprando</button>
+            </div>
+          ) : cartItems.length === 0 ? (
             <div className="empty-cart"><span>○</span><h3>Tu bolsa está vacía</h3><p>Agrega algunas lanas para comenzar tu próximo proyecto.</p><button onClick={() => setCartOpen(false)}>Explorar catálogo</button></div>
           ) : (
             cartItems.map((product) => (
@@ -252,7 +297,44 @@ export default function Storefront({ products, categories, siteContent }: Storef
             ))
           )}
         </div>
-        {cartItems.length > 0 && <div className="cart-summary"><div><span>Total</span><strong>{money.format(cartTotal)}</strong></div><p>El despacho se calcula al confirmar el pedido.</p><button onClick={copyOrder}>Copiar pedido para WhatsApp</button></div>}
+        {cartItems.length > 0 && !confirmation && (
+          <div className="cart-summary">
+            <div><span>Total</span><strong>{money.format(cartTotal)}</strong></div>
+            <p>El despacho se calcula al confirmar el pedido.</p>
+
+            {checkoutOpen ? (
+              <form className="checkout-form" onSubmit={submitOrder}>
+                <label>
+                  <span>Nombre y apellido</span>
+                  <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+                </label>
+                <label>
+                  <span>Correo</span>
+                  <input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                </label>
+                <label>
+                  <span>Teléfono</span>
+                  <input inputMode="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                </label>
+                <label>
+                  <span>Dirección de despacho</span>
+                  <input required value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
+                </label>
+                <label>
+                  <span>Comentarios (opcional)</span>
+                  <textarea rows={2} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+                </label>
+                <button disabled={sending} type="submit">{sending ? "Enviando…" : "Confirmar pedido"}</button>
+                <button className="checkout-back" disabled={sending} onClick={() => setCheckoutOpen(false)} type="button">Volver</button>
+              </form>
+            ) : (
+              <>
+                <button onClick={() => setCheckoutOpen(true)}>Confirmar pedido</button>
+                <button className="checkout-secondary" onClick={copyOrder} type="button">Copiar pedido para WhatsApp</button>
+              </>
+            )}
+          </div>
+        )}
       </aside>
 
       {notice && <div className="toast" role="status">{notice}</div>}

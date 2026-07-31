@@ -54,6 +54,7 @@ type AdminSection =
   | "marcas"
   | "contactos"
   | "cotizaciones"
+  | "pedidos"
   | "banners"
   | "medios"
   | "paginas"
@@ -179,6 +180,7 @@ const sidebarGroups: { title: string; items: { id: AdminSection; label: string }
   {
     title: "Solicitudes",
     items: [
+      { id: "pedidos", label: "Pedidos" },
       { id: "contactos", label: "Contactos" },
       { id: "cotizaciones", label: "Cotizaciones" },
     ],
@@ -672,6 +674,8 @@ export default function AdminPage() {
           <ContentPanel activeSection={activeSection} content={siteContent} onSave={saveSiteContent} />
         )}
 
+        {activeSection === "pedidos" && <OrdersPanel authedFetch={authedFetch} canWrite={Boolean(token)} />}
+
         {activeSection === "medios" && <MediaPanel authedFetch={authedFetch} canWrite={Boolean(token)} setNotice={setNotice} />}
 
         {activeSection === "reportes" && <SimplePanel title="Reportes" intro="Resumen de ventas, solicitudes y productos visibles. La conexión a métricas reales queda pendiente." items={["Productos visibles", "Solicitudes abiertas", "Cotizaciones pendientes"]} />}
@@ -791,6 +795,103 @@ function ManageListPanel({
           <div key={item}><input defaultValue={item} aria-label={`Editar ${item}`} /><button onClick={() => onRemove(item)} type="button">Eliminar</button></div>
         ))}
       </div>
+    </section>
+  );
+}
+
+type OrderRow = {
+  id: string;
+  user_name: string;
+  user_email: string;
+  user_phone: string;
+  total: number;
+  status: string;
+  shipping_address: string;
+  notes: string;
+  created_at: string;
+  lines: number;
+  detail: string | null;
+};
+
+function OrdersPanel({
+  authedFetch,
+  canWrite,
+}: {
+  authedFetch: (url: string, init: RequestInit) => Promise<Response>;
+  canWrite: boolean;
+}) {
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!canWrite) return;
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const response = await authedFetch("/api/orders", { method: "GET" });
+        const { orders: rows } = (await response.json()) as { orders: OrderRow[] };
+        if (!cancelled) {
+          setOrders(rows ?? []);
+          setState("idle");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMessage(error instanceof Error ? error.message : "No se pudieron cargar los pedidos.");
+          setState("error");
+        }
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [authedFetch, canWrite]);
+
+  if (!canWrite) {
+    return (
+      <section className="admin-panel">
+        <div className="admin-panel-heading"><div><p>Solicitudes</p><h2>Pedidos</h2></div></div>
+        <p className="admin-media-empty">Ingresa la contraseña del panel para ver los pedidos.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="admin-panel">
+      <div className="admin-panel-heading">
+        <div><p>Solicitudes</p><h2>Pedidos</h2></div>
+        <span className="admin-panel-count">{orders.length} pedido(s)</span>
+      </div>
+
+      {state === "error" ? (
+        <p className="admin-media-empty">{message}</p>
+      ) : orders.length === 0 ? (
+        <p className="admin-media-empty">Todavía no hay pedidos.</p>
+      ) : (
+        <div className="admin-orders">
+          {orders.map((order) => (
+            <article className="admin-order" key={order.id}>
+              <header>
+                <strong>#{order.id.slice(0, 8).toUpperCase()}</strong>
+                <span className="admin-order-status">{order.status}</span>
+                <b>{money.format(order.total)}</b>
+              </header>
+              <p className="admin-order-detail">{order.detail ?? `${order.lines} línea(s)`}</p>
+              <dl className="admin-order-meta">
+                <div><dt>Cliente</dt><dd>{order.user_name}</dd></div>
+                <div><dt>Correo</dt><dd>{order.user_email}</dd></div>
+                {order.user_phone && <div><dt>Teléfono</dt><dd>{order.user_phone}</dd></div>}
+                <div><dt>Despacho</dt><dd>{order.shipping_address}</dd></div>
+                <div><dt>Fecha</dt><dd>{order.created_at}</dd></div>
+                {order.notes && <div><dt>Comentarios</dt><dd>{order.notes}</dd></div>}
+              </dl>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

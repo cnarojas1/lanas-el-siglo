@@ -2058,3 +2058,176 @@ footer small {
   border-color: var(--terracotta);
   color: var(--terracotta);
 }
+
+/* --- Checkout en la bolsa --- */
+.checkout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-top: 14px;
+}
+
+.checkout-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.checkout-form span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.checkout-form input,
+.checkout-form textarea {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.checkout-form input:focus,
+.checkout-form textarea:focus {
+  outline: 2px solid var(--terracotta);
+  outline-offset: -1px;
+}
+
+.checkout-back,
+.checkout-secondary {
+  background: transparent !important;
+  border: 1px solid var(--line) !important;
+  color: var(--muted) !important;
+}
+
+.checkout-back:hover,
+.checkout-secondary:hover {
+  border-color: var(--terracotta) !important;
+  color: var(--terracotta) !important;
+}
+
+.cart-summary button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- Confirmacion de pedido --- */
+.order-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 46px 22px;
+  text-align: center;
+}
+
+.order-done > span {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--sand);
+  color: var(--forest);
+  font-size: 24px;
+}
+
+.order-done h3 {
+  margin: 4px 0 0;
+  color: var(--forest);
+}
+
+.order-done p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.order-done-note {
+  font-size: 13px !important;
+  line-height: 1.6;
+}
+
+.order-done button {
+  margin-top: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--terracotta);
+  color: #fff;
+  padding: 12px 24px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* --- Pedidos en el panel --- */
+.admin-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.admin-order {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 16px 18px;
+}
+
+.admin-order header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.admin-order header strong {
+  font-size: 14px;
+  color: var(--forest);
+}
+
+.admin-order header b {
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--terracotta);
+}
+
+.admin-order-status {
+  border-radius: 999px;
+  background: var(--sand);
+  color: var(--forest);
+  padding: 3px 11px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-order-detail {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--forest);
+  line-height: 1.6;
+}
+
+.admin-order-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 9px 18px;
+  margin: 0;
+}
+
+.admin-order-meta dt {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-order-meta dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--forest);
+  overflow-wrap: anywhere;
+}
