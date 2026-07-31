@@ -1,83 +1,34 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
-
-type Product = {
-  id: number;
-  name: string;
-  category: string;
-  color: string;
-  price: number;
-  weight: string;
-  fiber: string;
-  imagePosition: string;
-};
-
-const productVariants = [
-  { color: "Crema", imagePosition: "0% 0%" },
-  { color: "Rosa", imagePosition: "33.333% 0%" },
-  { color: "Batik salvia", imagePosition: "66.667% 0%" },
-  { color: "Terracota", imagePosition: "100% 0%" },
-  { color: "Arena", imagePosition: "0% 100%" },
-  { color: "Malva", imagePosition: "33.333% 100%" },
-  { color: "Oliva", imagePosition: "66.667% 100%" },
-  { color: "Canela", imagePosition: "100% 100%" },
-];
-
-const categoryCatalog = [
-  {
-    category: "Lanas clásica",
-    fiber: "Acrílico suave de uso diario",
-    basePrice: 3990,
-    names: ["Clásica Nieve", "Clásica Rosa", "Clásica Salvia", "Clásica Terracota", "Clásica Arena", "Clásica Malva", "Clásica Oliva", "Clásica Canela"],
-  },
-  {
-    category: "Lanas baby",
-    fiber: "Fibra hipoalergénica y delicada",
-    basePrice: 4490,
-    names: ["Baby Nube", "Baby Rosa", "Baby Jardín", "Baby Cobre", "Baby Trigo", "Baby Lavanda", "Baby Bosque", "Baby Caramelo"],
-  },
-  {
-    category: "Lanas batik",
-    fiber: "Hebra multicolor de cambio gradual",
-    basePrice: 5990,
-    names: ["Batik Marfil", "Batik Flor", "Batik Salvia", "Batik Otoño", "Batik Duna", "Batik Malva", "Batik Olivar", "Batik Canela"],
-  },
-  {
-    category: "Lanas Fantasía",
-    fiber: "Textura decorativa de alto volumen",
-    basePrice: 5490,
-    names: ["Fantasía Polar", "Fantasía Pétalo", "Fantasía Menta", "Fantasía Cobre", "Fantasía Arena", "Fantasía Malva", "Fantasía Musgo", "Fantasía Calabaza"],
-  },
-  {
-    category: "Lanas con % lana",
-    fiber: "Mezcla abrigada con lana natural",
-    basePrice: 6990,
-    names: ["Andina Cruda", "Andina Rosada", "Andina Salvia", "Andina Terracota", "Andina Arena", "Andina Malva", "Andina Oliva", "Andina Canela"],
-  },
-];
-
-const products: Product[] = categoryCatalog.flatMap((group, groupIndex) =>
-  productVariants.map((variant, variantIndex) => ({
-    id: groupIndex * productVariants.length + variantIndex + 1,
-    name: group.names[variantIndex],
-    category: group.category,
-    color: variant.color,
-    price: group.basePrice + variantIndex * 200,
-    weight: "100 g",
-    fiber: group.fiber,
-    imagePosition: variant.imagePosition,
-  })),
-);
-
-const categories = ["Todas", ...categoryCatalog.map((group) => group.category)];
+import { useEffect, useMemo, useState } from "react";
+import { categories, products } from "./catalog-data";
 
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
   currency: "CLP",
   maximumFractionDigits: 0,
 });
+
+const siteContentStorageKey = "laneria-el-siglo-content";
+const defaultSiteContent = {
+  bannerKitCta: "Explorar kits",
+  bannerKitText: "Elige tus ovillos favoritos y encuentra los básicos para darle forma a tu próxima idea.",
+  bannerKitTitle: "Arma tu primer kit de tejido",
+  bannerColorsCta: "Ver colores",
+  bannerColorsText: "Terracotas, verdes y rosas suaves para combinar sin complicaciones.",
+  bannerColorsTitle: "Colores que se sienten tan bien como se ven",
+  catalogIntro: "Listado actualizado desde la planilla: composición, gramaje, metraje, palillos, crochet y colores disponibles.",
+  catalogTitle: "Catálogo de productos",
+  faqAnswer: "Despachamos a todo Chile. Los tiempos y costos se confirman al cerrar la compra.",
+  faqQuestion: "¿Realizan despachos?",
+  heroCta: "Ver catálogo",
+  heroEyebrow: "COLOR, TEXTURA Y CALIDEZ",
+  heroText: "Encuentra fibras suaves, colores únicos y todo lo que necesitas para tu próximo proyecto.",
+  heroTitle: "Lanas para crear a tu manera",
+  storyText: "Seleccionamos fibras agradables al tacto, colores fáciles de combinar y formatos simples para que comprar sea tan entretenido como tejer.",
+  storyTitle: "Tu próxima creación comienza con una buena lana",
+};
 
 export default function Home() {
   const [category, setCategory] = useState("Todas");
@@ -86,6 +37,26 @@ export default function Home() {
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [siteContent, setSiteContent] = useState(defaultSiteContent);
+
+  useEffect(() => {
+    function loadContent() {
+      const stored = window.localStorage.getItem(siteContentStorageKey);
+      if (!stored) return;
+      try {
+        setSiteContent({ ...defaultSiteContent, ...JSON.parse(stored) });
+      } catch {
+        setSiteContent(defaultSiteContent);
+      }
+    }
+    loadContent();
+    window.addEventListener("storage", loadContent);
+    window.addEventListener("laneria-content-updated", loadContent);
+    return () => {
+      window.removeEventListener("storage", loadContent);
+      window.removeEventListener("laneria-content-updated", loadContent);
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -151,10 +122,10 @@ export default function Home() {
 
       <section className="hero" id="inicio">
         <div className="hero-copy">
-          <p className="eyebrow">COLOR, TEXTURA Y CALIDEZ</p>
-          <h1>Lanas para crear a tu manera</h1>
-          <p className="hero-text">Encuentra fibras suaves, colores únicos y todo lo que necesitas para tu próximo proyecto.</p>
-          <a className="primary-button" href="#catalogo">Ver catálogo</a>
+          <p className="eyebrow">{siteContent.heroEyebrow}</p>
+          <h1>{siteContent.heroTitle}</h1>
+          <p className="hero-text">{siteContent.heroText}</p>
+          <a className="primary-button" href="#catalogo">{siteContent.heroCta}</a>
           <div className="hero-details" aria-label="Beneficios">
             <span>Fibras seleccionadas</span>
             <span>Despacho nacional</span>
@@ -167,9 +138,9 @@ export default function Home() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">ELIGE TU FAVORITA</p>
-            <h2>Favoritos de la temporada</h2>
+            <h2>{siteContent.catalogTitle}</h2>
           </div>
-          <p>Lanas suaves y versátiles para tejer prendas, accesorios y todo lo que imagines.</p>
+          <p>{siteContent.catalogIntro}</p>
         </div>
 
         <div className="catalog-tools">
@@ -189,7 +160,14 @@ export default function Home() {
         <div className="product-grid">
           {filtered.map((product, index) => (
             <article className="product-card" key={product.id}>
-              <div className="product-image" style={{ backgroundPosition: product.imagePosition }}>
+              <div
+                className="product-image"
+                style={{
+                  backgroundImage: `url("${product.imageSource}")`,
+                  backgroundPosition: product.imagePosition,
+                  backgroundSize: product.imageSize,
+                }}
+              >
                 {index < 2 && <span className="product-badge">{index === 0 ? "Más vendido" : "Nuevo"}</span>}
                 <button onClick={() => addToCart(product.id)} aria-label={`Agregar ${product.name} a la bolsa`}>+</button>
               </div>
@@ -198,8 +176,18 @@ export default function Home() {
                   <p>{product.category} · {product.weight}</p>
                   <h3>{product.name}</h3>
                   <span>{product.fiber}</span>
+                  <dl className="product-specs">
+                    <div><dt>Colores</dt><dd>{product.colorCount}</dd></div>
+                    <div><dt>Metraje</dt><dd>{product.length}</dd></div>
+                    <div><dt>Palillo</dt><dd>{product.needles}</dd></div>
+                    <div><dt>Crochet</dt><dd>{product.crochet}</dd></div>
+                  </dl>
+                  <small className="product-colors">Códigos: {product.allColors}</small>
                 </div>
-                <strong>{money.format(product.price)}</strong>
+                <div className="product-price">
+                  <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
+                  {product.dozenPrice && <small>{product.dozenPrice}</small>}
+                </div>
               </div>
             </article>
           ))}
@@ -211,17 +199,17 @@ export default function Home() {
         <article className="promo-banner promo-kit">
           <div className="promo-copy promo-copy-light">
             <p className="eyebrow">TODO PARA COMENZAR</p>
-            <h2>Arma tu primer kit de tejido</h2>
-            <p>Elige tus ovillos favoritos y encuentra los básicos para darle forma a tu próxima idea.</p>
-            <a href="#catalogo">Explorar kits <span aria-hidden="true">→</span></a>
+            <h2>{siteContent.bannerKitTitle}</h2>
+            <p>{siteContent.bannerKitText}</p>
+            <a href="#catalogo">{siteContent.bannerKitCta} <span aria-hidden="true">→</span></a>
           </div>
         </article>
         <article className="promo-banner promo-colors">
           <div className="promo-copy promo-copy-dark">
             <p className="eyebrow">PALETA DE TEMPORADA</p>
-            <h2>Colores que se sienten tan bien como se ven</h2>
-            <p>Terracotas, verdes y rosas suaves para combinar sin complicaciones.</p>
-            <a href="#catalogo">Ver colores <span aria-hidden="true">→</span></a>
+            <h2>{siteContent.bannerColorsTitle}</h2>
+            <p>{siteContent.bannerColorsText}</p>
+            <a href="#catalogo">{siteContent.bannerColorsCta} <span aria-hidden="true">→</span></a>
           </div>
         </article>
       </section>
@@ -229,14 +217,22 @@ export default function Home() {
       <section className="story-section" id="nosotros">
         <div className="story-card">
           <p className="eyebrow">HECHO PARA DISFRUTAR EL PROCESO</p>
-          <h2>Tu próxima creación comienza con una buena lana</h2>
-          <p>Seleccionamos fibras agradables al tacto, colores fáciles de combinar y formatos simples para que comprar sea tan entretenido como tejer.</p>
+          <h2>{siteContent.storyTitle}</h2>
+          <p>{siteContent.storyText}</p>
         </div>
         <div className="benefits">
           <article><span>01</span><h3>Compra sencilla</h3><p>Explora por fibra o color y arma tu bolsa en pocos pasos.</p></article>
           <article><span>02</span><h3>Ayuda cercana</h3><p>Te orientamos para elegir la lana adecuada para tu proyecto.</p></article>
           <article><span>03</span><h3>Envíos a Chile</h3><p>Recibe tus materiales donde estés, con seguimiento.</p></article>
         </div>
+      </section>
+
+      <section className="faq-section">
+        <div>
+          <p className="eyebrow">PREGUNTAS FRECUENTES</p>
+          <h2>{siteContent.faqQuestion}</h2>
+        </div>
+        <p>{siteContent.faqAnswer}</p>
       </section>
 
       <section className="newsletter">
@@ -274,7 +270,14 @@ export default function Home() {
           ) : (
             cartItems.map((product) => (
               <article className="cart-item" key={product.id}>
-                <div className="cart-thumb" style={{ backgroundPosition: product.imagePosition }} />
+                <div
+                  className="cart-thumb"
+                  style={{
+                    backgroundImage: `url("${product.imageSource}")`,
+                    backgroundPosition: product.imagePosition,
+                    backgroundSize: product.imageSize,
+                  }}
+                />
                 <div><h3>{product.name}</h3><p>{product.color} · {product.weight}</p><strong>{money.format(product.price)}</strong>
                   <div className="quantity"><button onClick={() => updateQuantity(product.id, -1)} aria-label="Quitar uno">−</button><span>{cart[product.id]}</span><button onClick={() => updateQuantity(product.id, 1)} aria-label="Agregar uno">+</button></div>
                 </div>
