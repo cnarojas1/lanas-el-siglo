@@ -780,6 +780,42 @@ function ManageListPanel({
   onRemove: (value: string) => void;
   title: string;
 }) {
+  const handleImageClick = async (item: MediaItem) => {
+    setSelectedImage(item);
+    setSelectedProductId(null);
+    
+    // Cargar productos disponibles
+    try {
+      const resp = await fetch("/api/products?limit=1000");
+      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
+      setProducts(data || []);
+    } catch {
+      setNotice("No se pudieron cargar los productos.");
+    }
+  };
+
+  const assignImageToProduct = async () => {
+    if (!selectedImage || !selectedProductId) return;
+    
+    setAssignBusy(true);
+    try {
+      await authedFetch("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedProductId,
+          image_source: selectedImage.url,
+        }),
+      });
+      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
+      setSelectedImage(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading"><div><p>Catálogo</p><h2>{title}</h2></div></div>
@@ -857,6 +893,42 @@ function OrdersPanel({
     );
   }
 
+  const handleImageClick = async (item: MediaItem) => {
+    setSelectedImage(item);
+    setSelectedProductId(null);
+    
+    // Cargar productos disponibles
+    try {
+      const resp = await fetch("/api/products?limit=1000");
+      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
+      setProducts(data || []);
+    } catch {
+      setNotice("No se pudieron cargar los productos.");
+    }
+  };
+
+  const assignImageToProduct = async () => {
+    if (!selectedImage || !selectedProductId) return;
+    
+    setAssignBusy(true);
+    try {
+      await authedFetch("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedProductId,
+          image_source: selectedImage.url,
+        }),
+      });
+      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
+      setSelectedImage(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading">
@@ -924,6 +996,10 @@ function MediaPanel({
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(false);
   const [search, setSearch] = useState("");
+  const [selectedImage, setSelectedImage] = useState<MediaItem | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [products, setProducts] = useState<Array<{id: number; name: string}>>([]);
+  const [assignBusy, setAssignBusy] = useState(false);
 
   async function refresh() {
     try {
@@ -1014,6 +1090,42 @@ function MediaPanel({
     setNotice(`Ruta copiada: ${item.url} — pégala en "Imagen" de la ficha de producto.`);
   }
 
+  const handleImageClick = async (item: MediaItem) => {
+    setSelectedImage(item);
+    setSelectedProductId(null);
+    
+    // Cargar productos disponibles
+    try {
+      const resp = await fetch("/api/products?limit=1000");
+      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
+      setProducts(data || []);
+    } catch {
+      setNotice("No se pudieron cargar los productos.");
+    }
+  };
+
+  const assignImageToProduct = async () => {
+    if (!selectedImage || !selectedProductId) return;
+    
+    setAssignBusy(true);
+    try {
+      await authedFetch("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedProductId,
+          image_source: selectedImage.url,
+        }),
+      });
+      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
+      setSelectedImage(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading">
@@ -1085,7 +1197,12 @@ function MediaPanel({
             {items
               .filter((i) => i.filename.toLowerCase().includes(search.toLowerCase()))
               .map((item) => (
-            <figure className="admin-media-card" key={item.kv_key}>
+            <figure
+              className="admin-media-card"
+              key={item.kv_key}
+              onClick={() => handleImageClick(item)}
+              style={{ cursor: "pointer" }}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img alt={item.filename} loading="lazy" src={item.url} />
               <figcaption>
@@ -1100,6 +1217,61 @@ function MediaPanel({
               ))}
           </div>
         </>
+      )}
+
+      {selectedImage && (
+        <div className="admin-modal-overlay" onClick={() => setSelectedImage(null)}>
+          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2>Asignar imagen a producto</h2>
+              <button
+                className="admin-modal-close"
+                onClick={() => setSelectedImage(null)}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="admin-modal-body">
+              <div className="admin-modal-preview">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img alt={selectedImage.filename} src={selectedImage.url} />
+                <p className="admin-modal-filename">{selectedImage.filename}</p>
+              </div>
+
+              <div className="admin-modal-form">
+                <label>
+                  <span>Selecciona un producto</span>
+                  <select
+                    value={selectedProductId || ""}
+                    onChange={(e) => setSelectedProductId(Number(e.target.value) || null)}
+                  >
+                    <option value="">-- Elige un producto --</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="admin-modal-actions">
+                  <button
+                    className="admin-modal-assign"
+                    disabled={!selectedProductId || assignBusy}
+                    onClick={assignImageToProduct}
+                  >
+                    {assignBusy ? "Asignando…" : "Asignar imagen"}
+                  </button>
+                  <button className="admin-modal-cancel" onClick={() => setSelectedImage(null)}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );
@@ -1141,6 +1313,42 @@ function ContentPanel({ activeSection, content, onSave }: { activeSection: Admin
             ["faqQuestion", "Pregunta frecuente"],
             ["faqAnswer", "Respuesta"],
           ];
+  const handleImageClick = async (item: MediaItem) => {
+    setSelectedImage(item);
+    setSelectedProductId(null);
+    
+    // Cargar productos disponibles
+    try {
+      const resp = await fetch("/api/products?limit=1000");
+      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
+      setProducts(data || []);
+    } catch {
+      setNotice("No se pudieron cargar los productos.");
+    }
+  };
+
+  const assignImageToProduct = async () => {
+    if (!selectedImage || !selectedProductId) return;
+    
+    setAssignBusy(true);
+    try {
+      await authedFetch("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedProductId,
+          image_source: selectedImage.url,
+        }),
+      });
+      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
+      setSelectedImage(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading"><div><p>Contenido dinámico</p><h2>{title}</h2></div><button onClick={() => onSave(draft)} type="button">Guardar y publicar</button></div>
@@ -1174,6 +1382,42 @@ function UsersPanel({
   admins: { email: string; name: string; permissions: string; role: string }[];
   setAdmins: (admins: { email: string; name: string; permissions: string; role: string }[]) => void;
 }) {
+  const handleImageClick = async (item: MediaItem) => {
+    setSelectedImage(item);
+    setSelectedProductId(null);
+    
+    // Cargar productos disponibles
+    try {
+      const resp = await fetch("/api/products?limit=1000");
+      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
+      setProducts(data || []);
+    } catch {
+      setNotice("No se pudieron cargar los productos.");
+    }
+  };
+
+  const assignImageToProduct = async () => {
+    if (!selectedImage || !selectedProductId) return;
+    
+    setAssignBusy(true);
+    try {
+      await authedFetch("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedProductId,
+          image_source: selectedImage.url,
+        }),
+      });
+      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
+      setSelectedImage(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading"><div><p>Usuarios</p><h2>Administradores</h2></div><button type="button">Invitar usuario</button></div>
@@ -1193,6 +1437,42 @@ function UsersPanel({
 }
 
 function SimplePanel({ intro, items, title }: { intro: string; items: string[]; title: string }) {
+  const handleImageClick = async (item: MediaItem) => {
+    setSelectedImage(item);
+    setSelectedProductId(null);
+    
+    // Cargar productos disponibles
+    try {
+      const resp = await fetch("/api/products?limit=1000");
+      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
+      setProducts(data || []);
+    } catch {
+      setNotice("No se pudieron cargar los productos.");
+    }
+  };
+
+  const assignImageToProduct = async () => {
+    if (!selectedImage || !selectedProductId) return;
+    
+    setAssignBusy(true);
+    try {
+      await authedFetch("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedProductId,
+          image_source: selectedImage.url,
+        }),
+      });
+      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
+      setSelectedImage(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading"><div><p>Administración</p><h2>{title}</h2></div><button type="button">Entrar</button></div>
