@@ -606,9 +606,12 @@ export default function AdminPage() {
             </article>
 
             <ProductEditor
+              authedFetch={authedFetch}
               brands={brands}
+              canWrite={Boolean(token)}
               categories={categories}
               product={draftProduct}
+              setNotice={setNotice}
               setProduct={setDraftProduct}
               onSave={saveProduct}
               title={selectedProduct ? `Ficha: ${selectedProduct.name}` : "Ficha de producto"}
@@ -699,65 +702,377 @@ function ProductThumb({ product }: { product: AdminProduct }) {
   );
 }
 
+type Variant = {
+  id: number;
+  product_id: number;
+  code: string;
+  color_name: string;
+  image_source: string;
+  sort_order: number;
+};
+
+/** A que campo escribe el selector de imagenes: la foto principal o un color. */
+type ImageTarget = { kind: "product" } | { kind: "variant"; id: number; code: string };
+
 function ProductEditor({
+  authedFetch,
   brands,
+  canWrite,
   categories,
   onSave,
   product,
+  setNotice,
   setProduct,
   title,
 }: {
+  authedFetch: (url: string, init: RequestInit) => Promise<Response>;
   brands: string[];
+  canWrite: boolean;
   categories: string[];
   onSave: () => void;
   product: AdminProduct;
+  setNotice: (message: string) => void;
   setProduct: (product: AdminProduct) => void;
   title: string;
 }) {
+  const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
+  const [mediaList, setMediaList] = useState<Array<{ id: number; filename: string; url: string }>>([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaSearch, setMediaSearch] = useState("");
+  const [modalTab, setModalTab] = useState<"medios" | "subir">("medios");
+  const [uploading, setUploading] = useState(false);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [variantsBusy, setVariantsBusy] = useState(false);
+
+  // Las variantes viven en su propia tabla, asi que se recargan al cambiar de ficha.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadVariants() {
+      try {
+        const response = await fetch(`/api/admin/variants?product_id=${product.id}`);
+        if (!response.ok) return;
+        const { variants: rows } = (await response.json()) as { variants: Variant[] };
+        if (!cancelled) setVariants(rows ?? []);
+      } catch {
+        if (!cancelled) setVariants([]);
+      }
+    }
+
+    loadVariants();
+    return () => {
+      cancelled = true;
+    };
+  }, [product.id]);
+
+  useEffect(() => {
+    if (!imageTarget) return;
+    let cancelled = false;
+
+    async function loadMedia() {
+      try {
+        setMediaLoading(true);
+        const response = await fetch("/api/admin/media");
+        const { media } = (await response.json()) as { media: { id: number; filename: string; url: string }[] };
+        if (!cancelled) setMediaList(media ?? []);
+      } finally {
+        if (!cancelled) setMediaLoading(false);
+      }
+    }
+
+    loadMedia();
+    return () => {
+      cancelled = true;
+    };
+  }, [imageTarget]);
+
+  /** Crea una variante por cada codigo del campo "Colores / codigos". */
+  async function seedVariants() {
+    const codes = product.allColors.split(",").map((code) => code.trim()).filter(Boolean);
+    if (!codes.length) {
+      setNotice("Escribe los códigos en \"Colores / códigos\" antes de generarlos.");
+      return;
+    }
+
+    setVariantsBusy(true);
+    try {
+      const response = await authedFetch("/api/admin/variants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product_id: product.id, codes }),
+      });
+      const { variants: rows } = (await response.json()) as { variants: Variant[] };
+      setVariants(rows ?? []);
+      setNotice(`${rows.length} código(s) disponibles para ${product.name}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudieron generar los códigos.");
+    } finally {
+      setVariantsBusy(false);
+    }
+  }
+
+  /** Guarda un campo de la variante. Se persiste al vuelo, sin "Guardar cambios". */
+  async function patchVariant(id: number, patch: Partial<Pick<Variant, "code" | "color_name" | "image_source">>) {
+    setVariants((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    try {
+      await authedFetch("/api/admin/variants", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo guardar el color.");
+    }
+  }
+
+  async function removeVariant(variant: Variant) {
+    if (!window.confirm(`¿Eliminar el código "${variant.code}"?`)) return;
+    setVariants((current) => current.filter((item) => item.id !== variant.id));
+    try {
+      await authedFetch(`/api/admin/variants?id=${variant.id}`, { method: "DELETE" });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo eliminar el código.");
+    }
+  }
+
+  /** Aplica la imagen elegida al destino que abrio el selector. */
+  function applyImage(url: string) {
+    if (!imageTarget) return;
+
+    if (imageTarget.kind === "product") {
+      setProduct({ ...product, imageSource: url });
+      setNotice("Imagen principal actualizada. Pulsa \"Guardar cambios\" para publicarla.");
+    } else {
+      patchVariant(imageTarget.id, { image_source: url });
+      setNotice(`Imagen asignada al código ${imageTarget.code}.`);
+    }
+
+    setImageTarget(null);
+  }
+
+  async function uploadAndApply(files: FileList | null) {
+    if (!files?.length) return;
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      Array.from(files).forEach((file) => form.append("files", file));
+      const response = await authedFetch("/api/admin/media", { method: "POST", body: form });
+      const { uploaded } = (await response.json()) as { uploaded: { url: string }[] };
+
+      if (!uploaded?.length) {
+        setNotice("No se subió ninguna imagen.");
+        return;
+      }
+
+      applyImage(uploaded[0].url);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo subir la imagen.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const visibleMedia = mediaList.filter((media) =>
+    media.filename.toLowerCase().includes(mediaSearch.toLowerCase())
+  );
+
   return (
-    <article className="admin-panel admin-editor">
-      <div className="admin-panel-heading"><div><p>Ficha editable</p><h2>{title}</h2></div><button onClick={onSave} type="button">Guardar cambios</button></div>
-      <div className="admin-form-grid">
-        <label><span>Nombre del producto</span><input value={product.name} onChange={(event) => setProduct({ ...product, name: event.target.value })} /></label>
-        <label><span>Código</span><input value={product.code} onChange={(event) => setProduct({ ...product, code: event.target.value })} /></label>
-        <label><span>Precio</span><input min="0" type="number" value={product.price} onChange={(event) => setProduct({ ...product, price: Number(event.target.value) })} /></label>
-        <label><span>Precio docena</span><input value={product.dozenPrice} onChange={(event) => setProduct({ ...product, dozenPrice: event.target.value })} /></label>
-        <div className="admin-full-field">
-          <span className="admin-field-label">Categorías donde aparece</span>
-          <div className="admin-checkbox-grid">
-            {categories.map((category) => {
-              const checked = product.categories.includes(category);
-              return (
-                <label key={category}>
-                  <input
-                    checked={checked}
-                    type="checkbox"
-                    onChange={(event) => {
-                      const nextCategories = event.target.checked
-                        ? [...product.categories, category]
-                        : product.categories.filter((item) => item !== category);
-                      setProduct({
-                        ...product,
-                        categories: nextCategories,
-                        category: nextCategories[0] || product.category,
-                      });
-                    }}
-                  />
-                  <span>{category}</span>
-                </label>
-              );
-            })}
+    <>
+      <article className="admin-panel admin-editor">
+        <div className="admin-panel-heading"><div><p>Ficha editable</p><h2>{title}</h2></div><button onClick={onSave} type="button">Guardar cambios</button></div>
+        <div className="admin-editor-content">
+          <div className="admin-editor-image">
+            <div className="admin-image-display">
+              {product.imageSource ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img alt={product.name} src={product.imageSource} />
+              ) : (
+                <div className="admin-image-empty">Sin imagen</div>
+              )}
+            </div>
+            <button type="button" onClick={() => setImageTarget({ kind: "product" })} className="admin-image-picker-btn-large">
+              {product.imageSource ? "Cambiar imagen" : "Seleccionar imagen"}
+            </button>
+          </div>
+          <div className="admin-editor-form">
+            <div className="admin-form-row">
+              <label><span>Nombre del producto</span><input value={product.name} onChange={(event) => setProduct({ ...product, name: event.target.value })} /></label>
+              <label><span>Código</span><input value={product.code} onChange={(event) => setProduct({ ...product, code: event.target.value })} /></label>
+            </div>
+            <div className="admin-form-row">
+              <label><span>Precio</span><input min="0" type="number" value={product.price} onChange={(event) => setProduct({ ...product, price: Number(event.target.value) })} /></label>
+              <label><span>Precio docena</span><input value={product.dozenPrice} onChange={(event) => setProduct({ ...product, dozenPrice: event.target.value })} /></label>
+            </div>
+            <div className="admin-form-full">
+              <span className="admin-field-label">Categorías</span>
+              <div className="admin-checkbox-grid">
+                {categories.map((category) => {
+                  const checked = product.categories.includes(category);
+                  return (
+                    <label key={category}>
+                      <input checked={checked} type="checkbox" onChange={(event) => {
+                        const nextCategories = event.target.checked ? [...product.categories, category] : product.categories.filter((item) => item !== category);
+                        setProduct({ ...product, categories: nextCategories, category: nextCategories[0] || product.category });
+                      }} />
+                      <span>{category}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="admin-form-row">
+              <label><span>Marca</span><select value={product.brand} onChange={(event) => setProduct({ ...product, brand: event.target.value })}>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>
+            </div>
+            <div className="admin-form-row">
+              <label><span>Composición</span><input value={product.fiber} onChange={(event) => setProduct({ ...product, fiber: event.target.value })} /></label>
+              <label><span>Gramaje</span><input value={product.weight} onChange={(event) => setProduct({ ...product, weight: event.target.value })} /></label>
+            </div>
+            <label className="admin-form-full"><span>Colores / códigos</span><input value={product.allColors} onChange={(event) => setProduct({ ...product, allColors: event.target.value })} /></label>
+            <label className="admin-form-full"><span>Descripción</span><textarea value={product.description} onChange={(event) => setProduct({ ...product, description: event.target.value })} /></label>
+            <label className="admin-switch"><input checked={product.visible} type="checkbox" onChange={(event) => setProduct({ ...product, visible: event.target.checked })} /><span>Visible en la tienda</span></label>
           </div>
         </div>
-        <label><span>Marca</span><select value={product.brand} onChange={(event) => setProduct({ ...product, brand: event.target.value })}>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>
-        <label><span>Imagen</span><input value={product.imageSource} onChange={(event) => setProduct({ ...product, imageSource: event.target.value })} /></label>
-        <label><span>Composición</span><input value={product.fiber} onChange={(event) => setProduct({ ...product, fiber: event.target.value })} /></label>
-        <label><span>Gramaje</span><input value={product.weight} onChange={(event) => setProduct({ ...product, weight: event.target.value })} /></label>
-        <label><span>Colores / códigos</span><input value={product.allColors} onChange={(event) => setProduct({ ...product, allColors: event.target.value })} /></label>
-        <label className="admin-full-field"><span>Descripción</span><textarea value={product.description} onChange={(event) => setProduct({ ...product, description: event.target.value })} /></label>
-        <label className="admin-switch"><input checked={product.visible} type="checkbox" onChange={(event) => setProduct({ ...product, visible: event.target.checked })} /><span>Visible en la tienda</span></label>
-      </div>
-    </article>
+
+        <section className="admin-variants">
+          <div className="admin-variants-heading">
+            <div>
+              <span className="admin-field-label">Colores por código</span>
+              <p>Cada código puede tener su propia foto. Se guarda al momento, sin pulsar &quot;Guardar cambios&quot;.</p>
+            </div>
+            <button type="button" onClick={seedVariants} disabled={!canWrite || variantsBusy}>
+              {variantsBusy ? "Generando…" : "Generar desde códigos"}
+            </button>
+          </div>
+
+          {variants.length === 0 ? (
+            <p className="admin-variants-empty">
+              Todavía no hay códigos separados. Usa &quot;Generar desde códigos&quot; para crear uno por cada
+              valor del campo <em>Colores / códigos</em>.
+            </p>
+          ) : (
+            <div className="admin-variant-grid">
+              {variants.map((variant) => (
+                <div className="admin-variant-card" key={variant.id}>
+                  <button
+                    className="admin-variant-image"
+                    type="button"
+                    onClick={() => setImageTarget({ kind: "variant", id: variant.id, code: variant.code })}
+                    title="Elegir imagen para este código"
+                  >
+                    {variant.image_source ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img alt={variant.code} src={variant.image_source} />
+                    ) : (
+                      <span>Sin foto</span>
+                    )}
+                  </button>
+                  <input
+                    aria-label={`Código ${variant.code}`}
+                    className="admin-variant-code"
+                    defaultValue={variant.code}
+                    onBlur={(event) => {
+                      const next = event.target.value.trim();
+                      if (next && next !== variant.code) patchVariant(variant.id, { code: next });
+                    }}
+                  />
+                  <input
+                    aria-label={`Nombre del color ${variant.code}`}
+                    className="admin-variant-color"
+                    defaultValue={variant.color_name}
+                    placeholder="Nombre del color"
+                    onBlur={(event) => {
+                      const next = event.target.value.trim();
+                      if (next !== variant.color_name) patchVariant(variant.id, { color_name: next });
+                    }}
+                  />
+                  <button className="admin-variant-remove" type="button" onClick={() => removeVariant(variant)}>
+                    Eliminar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </article>
+
+      {imageTarget && (
+        <div className="admin-modal-overlay" onClick={() => setImageTarget(null)}>
+          <div className="admin-modal admin-modal-large" onClick={(event) => event.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2>
+                {imageTarget.kind === "product"
+                  ? `Imagen principal de ${product.name}`
+                  : `Imagen del código ${imageTarget.code}`}
+              </h2>
+              <button className="admin-modal-close" onClick={() => setImageTarget(null)} aria-label="Cerrar">×</button>
+            </div>
+
+            <div className="admin-modal-body-large">
+              <div className="admin-modal-tabs">
+                <button
+                  className={modalTab === "medios" ? "admin-tab-active" : ""}
+                  onClick={() => setModalTab("medios")}
+                  type="button"
+                >
+                  Medios cargados
+                </button>
+                <button
+                  className={modalTab === "subir" ? "admin-tab-active" : ""}
+                  onClick={() => setModalTab("subir")}
+                  type="button"
+                >
+                  Cargar nueva
+                </button>
+              </div>
+
+              {modalTab === "subir" ? (
+                <label className="admin-dropzone">
+                  <input
+                    accept="image/*"
+                    disabled={uploading || !canWrite}
+                    onChange={(event) => {
+                      uploadAndApply(event.target.files);
+                      event.target.value = "";
+                    }}
+                    type="file"
+                  />
+                  <strong>{uploading ? "Subiendo…" : "Haz clic para elegir una imagen"}</strong>
+                  <small>Se sube a la biblioteca y queda asignada de inmediato</small>
+                </label>
+              ) : mediaLoading ? (
+                <p className="admin-media-empty">Cargando biblioteca…</p>
+              ) : (
+                <>
+                  <input
+                    aria-label="Buscar imagen"
+                    className="admin-media-search"
+                    onChange={(event) => setMediaSearch(event.target.value)}
+                    placeholder="Buscar por nombre (ej: 'Favori', 'IMG')"
+                    type="text"
+                    value={mediaSearch}
+                  />
+                  <div className="admin-media-grid-modal">
+                    {visibleMedia.map((media) => (
+                      <button
+                        className="admin-media-card-modal"
+                        key={media.id}
+                        onClick={() => applyImage(media.url)}
+                        type="button"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img alt={media.filename} loading="lazy" src={media.url} />
+                        <small>{media.filename}</small>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -780,41 +1095,7 @@ function ManageListPanel({
   onRemove: (value: string) => void;
   title: string;
 }) {
-  const handleImageClick = async (item: MediaItem) => {
-    setSelectedImage(item);
-    setSelectedProductId(null);
-    
-    // Cargar productos disponibles
-    try {
-      const resp = await fetch("/api/products?limit=1000");
-      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
-      setProducts(data || []);
-    } catch {
-      setNotice("No se pudieron cargar los productos.");
-    }
-  };
 
-  const assignImageToProduct = async () => {
-    if (!selectedImage || !selectedProductId) return;
-    
-    setAssignBusy(true);
-    try {
-      await authedFetch("/api/admin/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: selectedProductId,
-          image_source: selectedImage.url,
-        }),
-      });
-      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
-      setSelectedImage(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
-    } finally {
-      setAssignBusy(false);
-    }
-  };
 
   return (
     <section className="admin-panel">
@@ -893,41 +1174,7 @@ function OrdersPanel({
     );
   }
 
-  const handleImageClick = async (item: MediaItem) => {
-    setSelectedImage(item);
-    setSelectedProductId(null);
-    
-    // Cargar productos disponibles
-    try {
-      const resp = await fetch("/api/products?limit=1000");
-      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
-      setProducts(data || []);
-    } catch {
-      setNotice("No se pudieron cargar los productos.");
-    }
-  };
 
-  const assignImageToProduct = async () => {
-    if (!selectedImage || !selectedProductId) return;
-    
-    setAssignBusy(true);
-    try {
-      await authedFetch("/api/admin/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: selectedProductId,
-          image_source: selectedImage.url,
-        }),
-      });
-      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
-      setSelectedImage(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
-    } finally {
-      setAssignBusy(false);
-    }
-  };
 
   return (
     <section className="admin-panel">
@@ -996,10 +1243,6 @@ function MediaPanel({
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedImage, setSelectedImage] = useState<MediaItem | null>(null);
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
-  const [products, setProducts] = useState<Array<{id: number; name: string}>>([]);
-  const [assignBusy, setAssignBusy] = useState(false);
 
   async function refresh() {
     try {
@@ -1090,42 +1333,6 @@ function MediaPanel({
     setNotice(`Ruta copiada: ${item.url} — pégala en "Imagen" de la ficha de producto.`);
   }
 
-  const handleImageClick = async (item: MediaItem) => {
-    setSelectedImage(item);
-    setSelectedProductId(null);
-    
-    // Cargar productos disponibles
-    try {
-      const resp = await fetch("/api/products?limit=1000");
-      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
-      setProducts(data || []);
-    } catch {
-      setNotice("No se pudieron cargar los productos.");
-    }
-  };
-
-  const assignImageToProduct = async () => {
-    if (!selectedImage || !selectedProductId) return;
-    
-    setAssignBusy(true);
-    try {
-      await authedFetch("/api/admin/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: selectedProductId,
-          image_source: selectedImage.url,
-        }),
-      });
-      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
-      setSelectedImage(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
-    } finally {
-      setAssignBusy(false);
-    }
-  };
-
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading">
@@ -1200,8 +1407,6 @@ function MediaPanel({
             <figure
               className="admin-media-card"
               key={item.kv_key}
-              onClick={() => handleImageClick(item)}
-              style={{ cursor: "pointer" }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img alt={item.filename} loading="lazy" src={item.url} />
@@ -1219,60 +1424,6 @@ function MediaPanel({
         </>
       )}
 
-      {selectedImage && (
-        <div className="admin-modal-overlay" onClick={() => setSelectedImage(null)}>
-          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="admin-modal-header">
-              <h2>Asignar imagen a producto</h2>
-              <button
-                className="admin-modal-close"
-                onClick={() => setSelectedImage(null)}
-                aria-label="Cerrar"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="admin-modal-body">
-              <div className="admin-modal-preview">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt={selectedImage.filename} src={selectedImage.url} />
-                <p className="admin-modal-filename">{selectedImage.filename}</p>
-              </div>
-
-              <div className="admin-modal-form">
-                <label>
-                  <span>Selecciona un producto</span>
-                  <select
-                    value={selectedProductId || ""}
-                    onChange={(e) => setSelectedProductId(Number(e.target.value) || null)}
-                  >
-                    <option value="">-- Elige un producto --</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="admin-modal-actions">
-                  <button
-                    className="admin-modal-assign"
-                    disabled={!selectedProductId || assignBusy}
-                    onClick={assignImageToProduct}
-                  >
-                    {assignBusy ? "Asignando…" : "Asignar imagen"}
-                  </button>
-                  <button className="admin-modal-cancel" onClick={() => setSelectedImage(null)}>
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
@@ -1313,41 +1464,7 @@ function ContentPanel({ activeSection, content, onSave }: { activeSection: Admin
             ["faqQuestion", "Pregunta frecuente"],
             ["faqAnswer", "Respuesta"],
           ];
-  const handleImageClick = async (item: MediaItem) => {
-    setSelectedImage(item);
-    setSelectedProductId(null);
-    
-    // Cargar productos disponibles
-    try {
-      const resp = await fetch("/api/products?limit=1000");
-      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
-      setProducts(data || []);
-    } catch {
-      setNotice("No se pudieron cargar los productos.");
-    }
-  };
 
-  const assignImageToProduct = async () => {
-    if (!selectedImage || !selectedProductId) return;
-    
-    setAssignBusy(true);
-    try {
-      await authedFetch("/api/admin/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: selectedProductId,
-          image_source: selectedImage.url,
-        }),
-      });
-      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
-      setSelectedImage(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
-    } finally {
-      setAssignBusy(false);
-    }
-  };
 
   return (
     <section className="admin-panel">
@@ -1382,41 +1499,7 @@ function UsersPanel({
   admins: { email: string; name: string; permissions: string; role: string }[];
   setAdmins: (admins: { email: string; name: string; permissions: string; role: string }[]) => void;
 }) {
-  const handleImageClick = async (item: MediaItem) => {
-    setSelectedImage(item);
-    setSelectedProductId(null);
-    
-    // Cargar productos disponibles
-    try {
-      const resp = await fetch("/api/products?limit=1000");
-      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
-      setProducts(data || []);
-    } catch {
-      setNotice("No se pudieron cargar los productos.");
-    }
-  };
 
-  const assignImageToProduct = async () => {
-    if (!selectedImage || !selectedProductId) return;
-    
-    setAssignBusy(true);
-    try {
-      await authedFetch("/api/admin/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: selectedProductId,
-          image_source: selectedImage.url,
-        }),
-      });
-      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
-      setSelectedImage(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
-    } finally {
-      setAssignBusy(false);
-    }
-  };
 
   return (
     <section className="admin-panel">
@@ -1437,41 +1520,7 @@ function UsersPanel({
 }
 
 function SimplePanel({ intro, items, title }: { intro: string; items: string[]; title: string }) {
-  const handleImageClick = async (item: MediaItem) => {
-    setSelectedImage(item);
-    setSelectedProductId(null);
-    
-    // Cargar productos disponibles
-    try {
-      const resp = await fetch("/api/products?limit=1000");
-      const { data } = (await resp.json()) as { data: Array<{id: number; name: string}> };
-      setProducts(data || []);
-    } catch {
-      setNotice("No se pudieron cargar los productos.");
-    }
-  };
 
-  const assignImageToProduct = async () => {
-    if (!selectedImage || !selectedProductId) return;
-    
-    setAssignBusy(true);
-    try {
-      await authedFetch("/api/admin/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: selectedProductId,
-          image_source: selectedImage.url,
-        }),
-      });
-      setNotice(`Imagen asignada a ${products.find(p => p.id === selectedProductId)?.name}`);
-      setSelectedImage(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo asignar la imagen.");
-    } finally {
-      setAssignBusy(false);
-    }
-  };
 
   return (
     <section className="admin-panel">

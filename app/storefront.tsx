@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useMemo, useState } from "react";
-import type { Product } from "./catalog-data";
+import type { Product, ProductVariant } from "./catalog-data";
 import type { SiteContent } from "./site-content";
 
 const money = new Intl.NumberFormat("es-CL", {
@@ -10,6 +10,25 @@ const money = new Intl.NumberFormat("es-CL", {
   currency: "CLP",
   maximumFractionDigits: 0,
 });
+
+function swatchLabel(variant: ProductVariant) {
+  return variant.colorName ? `${variant.code} · ${variant.colorName}` : variant.code;
+}
+
+function selectedVariant(product: Product, chosen: Record<number, number>) {
+  return product.variants?.find((item) => item.id === chosen[product.id]);
+}
+
+function imageStyle(product: Product, variantId?: number) {
+  const variant = product.variants?.find((item) => item.id === variantId);
+  const source = variant?.imageSource || product.imageSource;
+  const isPhoto = Boolean(variant) || source.startsWith("/api/media/");
+  return {
+    backgroundImage: `url("${source}")`,
+    backgroundPosition: isPhoto ? "center" : product.imagePosition,
+    backgroundSize: isPhoto ? "cover" : product.imageSize,
+  };
+}
 
 type StorefrontProps = {
   products: Product[];
@@ -25,6 +44,8 @@ export default function Storefront({ products, categories, siteContent, whatsapp
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  // Color elegido en cada tarjeta: producto -> id de variante.
+  const [chosenColor, setChosenColor] = useState<Record<number, number>>({});
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -58,10 +79,14 @@ export default function Storefront({ products, categories, siteContent, whatsapp
   /** Mensaje de la cotizacion, tal como llegara al WhatsApp de la tienda. */
   const quoteMessage = useMemo(() => {
     const lines = cartItems
-      .map((product) => `• ${cart[product.id]} × ${product.name} — ${money.format(product.price * cart[product.id])}`)
+      .map((product) => {
+        const variant = selectedVariant(product, chosenColor);
+        const color = variant ? ` (color ${swatchLabel(variant)})` : "";
+        return `• ${cart[product.id]} × ${product.name}${color} — ${money.format(product.price * cart[product.id])}`;
+      })
       .join("\n");
     return `Hola, quisiera cotizar:\n\n${lines}\n\nTotal referencial: ${money.format(cartTotal)}`;
-  }, [cartItems, cart, cartTotal]);
+  }, [cartItems, cart, cartTotal, chosenColor]);
 
   const whatsappHref = whatsappNumber
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(quoteMessage)}`
@@ -160,14 +185,7 @@ export default function Storefront({ products, categories, siteContent, whatsapp
         <div className="product-grid">
           {filtered.map((product, index) => (
             <article className="product-card" key={product.id}>
-              <div
-                className="product-image"
-                style={{
-                  backgroundImage: `url("${product.imageSource}")`,
-                  backgroundPosition: product.imagePosition,
-                  backgroundSize: product.imageSize,
-                }}
-              >
+              <div className="product-image" style={imageStyle(product, chosenColor[product.id])}>
                 {index < 2 && <span className="product-badge">{index === 0 ? "Más vendido" : "Nuevo"}</span>}
                 <button onClick={() => addToCart(product.id)} aria-label={`Agregar ${product.name} a la bolsa`}>+</button>
               </div>
@@ -182,7 +200,29 @@ export default function Storefront({ products, categories, siteContent, whatsapp
                     <div><dt>Palillo</dt><dd>{product.needles}</dd></div>
                     <div><dt>Crochet</dt><dd>{product.crochet}</dd></div>
                   </dl>
-                  <small className="product-colors">Códigos: {product.allColors}</small>
+                  {product.variants?.length ? (
+                    <div className="product-swatches">
+                      <span className="product-swatch-label">
+                        Color{selectedVariant(product, chosenColor) ? `: ${swatchLabel(selectedVariant(product, chosenColor)!)}` : ""}
+                      </span>
+                      <div className="product-swatch-row">
+                        {product.variants.map((variant) => (
+                          <button
+                            aria-label={`Ver color ${swatchLabel(variant)}`}
+                            aria-pressed={chosenColor[product.id] === variant.id}
+                            className={chosenColor[product.id] === variant.id ? "product-swatch product-swatch-active" : "product-swatch"}
+                            key={variant.id}
+                            onClick={() => setChosenColor((current) => ({ ...current, [product.id]: variant.id }))}
+                            style={{ backgroundImage: `url("${variant.imageSource}")` }}
+                            title={swatchLabel(variant)}
+                            type="button"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <small className="product-colors">Códigos: {product.allColors}</small>
+                  )}
                 </div>
                 <div className="product-price">
                   <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
@@ -273,9 +313,7 @@ export default function Storefront({ products, categories, siteContent, whatsapp
                 <div
                   className="cart-thumb"
                   style={{
-                    backgroundImage: `url("${product.imageSource}")`,
-                    backgroundPosition: product.imagePosition,
-                    backgroundSize: product.imageSize,
+                    ...imageStyle(product, chosenColor[product.id]),
                   }}
                 />
                 <div><h3>{product.name}</h3><p>{product.color} · {product.weight}</p><strong>{money.format(product.price)}</strong>

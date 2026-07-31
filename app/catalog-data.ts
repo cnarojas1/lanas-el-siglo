@@ -1,3 +1,10 @@
+export type ProductVariant = {
+  id: number;
+  code: string;
+  colorName: string;
+  imageSource: string;
+};
+
 export type Product = {
   id: number;
   name: string;
@@ -16,6 +23,8 @@ export type Product = {
   needles: string;
   crochet: string;
   dozenPrice: string;
+  /** Colores con foto propia. Vacio cuando el producto no tiene variantes. */
+  variants?: ProductVariant[];
 };
 
 type SourceProduct = Omit<Product, "id" | "price"> & {

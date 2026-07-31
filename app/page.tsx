@@ -50,6 +50,43 @@ function toProduct(row: ProductRow): Product {
   };
 }
 
+/**
+ * Cuelga de cada producto sus colores con foto. Solo se traen las variantes que
+ * tienen imagen: un codigo sin foto no aporta nada al selector de la tienda.
+ * Si la tabla aun no existe, el catalogo sigue funcionando sin variantes.
+ */
+async function attachVariants(products: Product[]) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, product_id, code, color_name, image_source
+       FROM product_variants
+       WHERE image_source <> ''
+       ORDER BY sort_order, id`
+    ).all<{ id: number; product_id: number; code: string; color_name: string; image_source: string }>();
+
+    if (!results.length) return;
+
+    const byProduct = new Map<number, Product["variants"]>();
+    for (const row of results) {
+      const list = byProduct.get(row.product_id) ?? [];
+      list.push({
+        id: row.id,
+        code: row.code,
+        colorName: row.color_name,
+        imageSource: row.image_source,
+      });
+      byProduct.set(row.product_id, list);
+    }
+
+    for (const product of products) {
+      const list = byProduct.get(product.id);
+      if (list?.length) product.variants = list;
+    }
+  } catch (error) {
+    console.error("No se pudieron leer las variantes desde D1:", error);
+  }
+}
+
 async function loadCatalog(): Promise<{ products: Product[]; categories: string[] }> {
   // Si D1 no responde, el sitio sigue en pie con el catalogo incluido en el
   // bundle en vez de mostrar una tienda vacia.
@@ -72,6 +109,7 @@ async function loadCatalog(): Promise<{ products: Product[]; categories: string[
     }
 
     const products = results.map(toProduct);
+    await attachVariants(products);
     const categories = ["Todas", ...new Set(products.map((product) => product.category))];
     return { products, categories };
   } catch (error) {
