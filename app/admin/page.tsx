@@ -54,7 +54,6 @@ type AdminSection =
   | "marcas"
   | "contactos"
   | "cotizaciones"
-  | "pedidos"
   | "banners"
   | "medios"
   | "paginas"
@@ -180,7 +179,6 @@ const sidebarGroups: { title: string; items: { id: AdminSection; label: string }
   {
     title: "Solicitudes",
     items: [
-      { id: "pedidos", label: "Pedidos" },
       { id: "contactos", label: "Contactos" },
       { id: "cotizaciones", label: "Cotizaciones" },
     ],
@@ -644,12 +642,14 @@ export default function AdminPage() {
           />
         )}
 
-        {(activeSection === "contactos" || activeSection === "cotizaciones") && (
+        {activeSection === "cotizaciones" && <OrdersPanel authedFetch={authedFetch} canWrite={Boolean(token)} />}
+
+        {activeSection === "contactos" && (
           <section className="admin-grid admin-request-layout">
             <article className="admin-panel">
-              <div className="admin-panel-heading"><div><p>Solicitudes</p><h2>{activeSection === "contactos" ? "Contactos" : "Cotizaciones"}</h2></div></div>
+              <div className="admin-panel-heading"><div><p>Solicitudes</p><h2>Contactos</h2></div></div>
               <div className="admin-request-list">
-                {requests.filter((request) => activeSection === "contactos" ? request.type === "Contacto" : request.type === "Cotización").map((request) => (
+                {requests.filter((request) => request.type === "Contacto").map((request) => (
                   <button className={selectedRequest.name === request.name ? "admin-request-card admin-request-selected" : "admin-request-card"} key={`${request.name}-${request.type}`} onClick={() => setSelectedRequest(request)} type="button">
                     <span>{request.type}</span><strong>{request.name}</strong><p>{request.detail}</p><em>{request.status}</em>
                   </button>
@@ -673,8 +673,6 @@ export default function AdminPage() {
         {(activeSection === "banners" || activeSection === "paginas" || activeSection === "preguntas-frecuentes") && (
           <ContentPanel activeSection={activeSection} content={siteContent} onSave={saveSiteContent} />
         )}
-
-        {activeSection === "pedidos" && <OrdersPanel authedFetch={authedFetch} canWrite={Boolean(token)} />}
 
         {activeSection === "medios" && <MediaPanel authedFetch={authedFetch} canWrite={Boolean(token)} setNotice={setNotice} />}
 
@@ -838,7 +836,7 @@ function OrdersPanel({
         }
       } catch (error) {
         if (!cancelled) {
-          setMessage(error instanceof Error ? error.message : "No se pudieron cargar los pedidos.");
+          setMessage(error instanceof Error ? error.message : "No se pudieron cargar las cotizaciones.");
           setState("error");
         }
       }
@@ -853,8 +851,8 @@ function OrdersPanel({
   if (!canWrite) {
     return (
       <section className="admin-panel">
-        <div className="admin-panel-heading"><div><p>Solicitudes</p><h2>Pedidos</h2></div></div>
-        <p className="admin-media-empty">Ingresa la contraseña del panel para ver los pedidos.</p>
+        <div className="admin-panel-heading"><div><p>Solicitudes</p><h2>Cotizaciones</h2></div></div>
+        <p className="admin-media-empty">Ingresa la contraseña del panel para ver las cotizaciones.</p>
       </section>
     );
   }
@@ -862,14 +860,14 @@ function OrdersPanel({
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading">
-        <div><p>Solicitudes</p><h2>Pedidos</h2></div>
-        <span className="admin-panel-count">{orders.length} pedido(s)</span>
+        <div><p>Solicitudes</p><h2>Cotizaciones</h2></div>
+        <span className="admin-panel-count">{orders.length} cotización(es)</span>
       </div>
 
       {state === "error" ? (
         <p className="admin-media-empty">{message}</p>
       ) : orders.length === 0 ? (
-        <p className="admin-media-empty">Todavía no hay pedidos.</p>
+        <p className="admin-media-empty">Todavía no hay cotizaciones.</p>
       ) : (
         <div className="admin-orders">
           {orders.map((order) => (

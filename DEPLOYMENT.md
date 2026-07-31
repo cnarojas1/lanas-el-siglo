@@ -97,8 +97,8 @@ vacía, la home lo usa para no quedar sin catálogo.
 
 `GET /api/products` — lee de D1. Acepta `?category=`, `?search=`, `?limit=`, `?offset=`.
 
-`POST /api/orders` — registra un pedido (público). `GET /api/orders` — listado
-para el panel, requiere `ADMIN_TOKEN`.
+`POST /api/orders` — deja registrada una cotización (público, sin datos de
+contacto). `GET /api/orders` — listado para el panel, requiere `ADMIN_TOKEN`.
 
 ```bash
 curl "https://lanas-el-siglo.cnarojas1.workers.dev/api/products?limit=3"
@@ -135,7 +135,7 @@ Es una contraseña compartida, no cuentas por persona. Las secciones
 | Banners, Páginas, Preguntas frecuentes | D1 (`site_content`) |
 | Listado de productos (precio, nombre, categoría, descripción, visibilidad, imagen) | D1 (`products`) |
 | Medios | KV (binario) + D1 (`media`) |
-| Pedidos | D1 (`orders`, `order_items`) — solo lectura |
+| Cotizaciones | D1 (`orders`, `order_items`) — solo lectura |
 | Categorías, Marcas, Contactos, Cotizaciones, Reportes, Administradores, Roles, Datos del sitio, SEO | Maqueta: solo la sesión actual |
 
 Un producto con `visible = 0` desaparece de la tienda pero sigue en el panel.
@@ -154,42 +154,50 @@ suficiente para el catálogo actual.
 Las claves llevan un prefijo aleatorio, así que dos archivos con el mismo nombre
 no se pisan y las imágenes se sirven con caché inmutable de un año.
 
-## Pedidos
+## Cotizaciones
 
-El carrito ya no es solo del navegador: "Confirmar pedido" pide nombre, correo,
-teléfono y dirección, y `POST /api/orders` registra el pedido en D1 y descuenta
-el inventario. El cliente recibe un número de pedido; los pedidos se ven en
-**Solicitudes → Pedidos** del panel (requiere la contraseña).
+La bolsa tiene una sola acción: **Enviar cotización por WhatsApp**. Abre
+`wa.me` con el detalle del carrito y el total ya escritos, y la conversación
+continúa por ahí. No hay checkout, ni datos de despacho, ni cobro en el sitio.
 
-Dos garantías que conviene conocer:
+El número se configura en `wrangler.toml`:
 
-**El precio nunca se toma del navegador.** La API lee el precio de D1 al
-registrar el pedido, así que alterar el carrito desde las herramientas del
-navegador no cambia el total.
+```toml
+WHATSAPP_NUMBER = "56995096522"   # solo dígitos, con código de país
+```
 
-**No se puede sobrevender.** `inventory.quantity_available` tiene
-`CHECK (quantity_available >= 0)`. Como el pedido, sus líneas y los descuentos
-de stock van en un solo `batch()` de D1 —es decir, una transacción—, si el stock
-no alcanza la restricción aborta el pedido completo en vez de dejar inventario
-negativo. La imposibilidad de sobrevender está en el esquema, no en el código.
+Si se deja vacío, el botón copia la cotización al portapapeles en vez de abrir
+WhatsApp, así que la tienda nunca queda sin salida.
 
-Verificado con 12 pedidos simultáneos contra 5 unidades: exactamente 5 se
-registraron, 7 fueron rechazados y el stock terminó en 0.
+### Registro
 
-El pedido queda en estado `pending`. **No hay cobro**: el flujo actual asume que
-se coordina el pago por fuera. El botón para copiar el pedido a WhatsApp sigue
-disponible como alternativa.
+Al pulsar el botón se deja una copia en D1 (`orders` con estado `cotizacion`,
+más sus líneas en `order_items`), visible en **Solicitudes → Cotizaciones** del
+panel. Dos detalles deliberados:
+
+**No pide datos de contacto.** El cliente se identifica en WhatsApp; exigirle un
+formulario antes de escribir solo agrega fricción. Por eso la cotización queda
+registrada sin nombre ni correo, y se cruza con la conversación por el detalle y
+la hora.
+
+**No descuenta inventario.** Una cotización no es una venta. Si se descontara,
+los clics que nunca se concretan vaciarían el stock y el `CHECK` del inventario
+terminaría bloqueando el botón con "agotado" sin haber vendido nada. El stock
+solo debería bajar al confirmar una venta real.
+
+El registro no bloquea el envío: si falla, WhatsApp se abre igual. El canal real
+es la conversación, la base de datos es solo el historial.
 
 ## Pendiente
 
 Lo que todavía NO está hecho, en orden de importancia:
 
-1. **No hay cobro en línea.** El pedido se registra en estado `pending` y el
-   pago se coordina aparte. Falta integrar una pasarela.
-2. **No se avisa por correo.** Ni al cliente ni a la tienda: hay que mirar el
-   panel para enterarse de un pedido nuevo.
-3. **El estado del pedido no se puede cambiar** desde el panel; los pedidos se
-   ven pero no se gestionan.
+1. **No hay venta en línea.** El cierre ocurre por WhatsApp: disponibilidad,
+   despacho y pago se acuerdan en la conversación.
+2. **El stock nunca baja solo.** Hay que ajustarlo a mano en `inventory` cuando
+   se concrete una venta.
+3. **El estado de la cotización no se puede cambiar** desde el panel; se ven
+   pero no se gestionan.
 4. **El panel usa una contraseña compartida**, no cuentas por persona con
    registro de quién cambió qué.
 5. **No hay CI/CD.** El deploy es manual con `npx vinext deploy`.

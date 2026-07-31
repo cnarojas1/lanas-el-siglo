@@ -105,5 +105,14 @@ export default async function Home() {
     loadSiteContent(),
   ]);
 
-  return <Storefront products={products} categories={categories} siteContent={siteContent} />;
+  const whatsappNumber = ((env as { WHATSAPP_NUMBER?: string }).WHATSAPP_NUMBER ?? "").replace(/\D/g, "");
+
+  return (
+    <Storefront
+      categories={categories}
+      products={products}
+      siteContent={siteContent}
+      whatsappNumber={whatsappNumber}
+    />
+  );
 }

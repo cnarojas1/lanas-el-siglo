@@ -19,3 +19,6 @@ id = "aadcce57d7584ffc89159f937fc24818"
 [vars]
 SHOP_NAME = "Lanas el Siglo"
 CURRENCY = "CLP"
+# Destino de las cotizaciones. Solo digitos, con codigo de pais y sin signos:
+# +56 9 9509 6522 se escribe 56995096522.
+WHATSAPP_NUMBER = "56995096522"
