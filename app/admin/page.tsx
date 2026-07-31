@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { categories as catalogCategories, products as catalogProducts, type Product } from "../catalog-data";
 
 const money = new Intl.NumberFormat("es-CL", {
@@ -55,6 +55,7 @@ type AdminSection =
   | "contactos"
   | "cotizaciones"
   | "banners"
+  | "medios"
   | "paginas"
   | "preguntas-frecuentes"
   | "reportes"
@@ -74,7 +75,77 @@ const initialProducts: AdminProduct[] = catalogProducts.map((product) => ({
 
 const initialCategories = catalogCategories.filter((category) => category !== "Todas");
 const initialBrands = Array.from(new Set(initialProducts.map((product) => product.brand)));
-const siteContentStorageKey = "laneria-el-siglo-content";
+const adminTokenStorageKey = "laneria-el-siglo-admin-token";
+
+// La sesion del panel vive en sessionStorage. Se expone como store externo para
+// leerla sin sincronizar estado dentro de un efecto.
+const tokenListeners = new Set<() => void>();
+
+function readToken() {
+  return window.sessionStorage.getItem(adminTokenStorageKey) ?? "";
+}
+
+function writeToken(value: string) {
+  if (value) window.sessionStorage.setItem(adminTokenStorageKey, value);
+  else window.sessionStorage.removeItem(adminTokenStorageKey);
+  tokenListeners.forEach((listener) => listener());
+}
+
+function subscribeToken(listener: () => void) {
+  tokenListeners.add(listener);
+  return () => {
+    tokenListeners.delete(listener);
+  };
+}
+
+/** Fila tal como la entrega /api/products. */
+type ProductRow = {
+  id: number;
+  name: string;
+  category: string;
+  color: string;
+  fiber: string;
+  weight: string;
+  length: string;
+  needles: string;
+  crochet: string;
+  price: number;
+  dozen_price: string;
+  image_source: string;
+  image_position: string;
+  image_size: string;
+  color_count: number;
+  all_colors: string;
+  visible: number;
+  description: string;
+};
+
+function toAdminProduct(row: ProductRow): AdminProduct {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    color: row.color,
+    fiber: row.fiber,
+    weight: row.weight,
+    length: row.length,
+    needles: row.needles,
+    crochet: row.crochet,
+    price: row.price,
+    dozenPrice: row.dozen_price,
+    imageSource: row.image_source,
+    imagePosition: row.image_position,
+    imageSize: row.image_size,
+    colorCount: row.color_count,
+    colorsWithPhoto: "",
+    allColors: row.all_colors,
+    code: row.all_colors.split(",")[0]?.trim() || `LS-${String(row.id).padStart(3, "0")}`,
+    description: row.description,
+    visible: row.visible === 1,
+    brand: row.name.split(" ")[0] || "El Siglo",
+    categories: [row.category],
+  };
+}
 
 const defaultSiteContent: SiteContent = {
   bannerKitCta: "Explorar kits",
@@ -116,6 +187,7 @@ const sidebarGroups: { title: string; items: { id: AdminSection; label: string }
     title: "Contenido",
     items: [
       { id: "banners", label: "Banners" },
+      { id: "medios", label: "Medios" },
       { id: "paginas", label: "Páginas" },
       { id: "preguntas-frecuentes", label: "Preguntas frecuentes" },
     ],
@@ -202,15 +274,73 @@ export default function AdminPage() {
     { name: "Vendedor", email: "ventas@laneriaelsiglo.cl", role: "Vendedor", permissions: "Solicitudes y cotizaciones" },
   ]);
 
+  // La sesion se pierde al cerrar la pestana y solo viaja como cabecera Authorization.
+  const token = useSyncExternalStore(subscribeToken, readToken, () => "");
+  const [tokenDraft, setTokenDraft] = useState("");
+
+  // Los textos y el catalogo son los que ve el publico: se leen de D1.
   useEffect(() => {
-    const stored = window.localStorage.getItem(siteContentStorageKey);
-    if (!stored) return;
-    try {
-      setSiteContent({ ...defaultSiteContent, ...JSON.parse(stored) });
-    } catch {
-      setNotice("No se pudo leer el contenido guardado localmente.");
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const [contentResponse, productsResponse] = await Promise.all([
+          fetch("/api/admin/content"),
+          fetch("/api/products?limit=100"),
+        ]);
+
+        if (cancelled) return;
+
+        if (contentResponse.ok) {
+          const { content } = (await contentResponse.json()) as { content: Record<string, string> };
+          setSiteContent({ ...defaultSiteContent, ...content });
+        }
+
+        if (productsResponse.ok) {
+          const { data } = (await productsResponse.json()) as { data: ProductRow[] };
+          if (data?.length) {
+            const mapped = data.map(toAdminProduct);
+            setProducts(mapped);
+            setCategories(Array.from(new Set(mapped.map((product) => product.category))));
+            setSelectedProductId(mapped[0].id);
+            setDraftProduct(mapped[0]);
+          }
+        }
+      } catch {
+        if (!cancelled) setNotice("No se pudo cargar el contenido desde la base de datos.");
+      }
     }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  function signOut() {
+    writeToken("");
+    setNotice("Sesión cerrada.");
+  }
+
+  /** Envuelve las escrituras: adjunta el token y traduce los errores comunes. */
+  async function authedFetch(url: string, init: RequestInit) {
+    const response = await fetch(url, {
+      ...init,
+      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` },
+    });
+
+    if (response.status === 401) {
+      signOut();
+      throw new Error("Contraseña incorrecta o sesión expirada.");
+    }
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Error ${response.status}`);
+    }
+
+    return response;
+  }
 
   const selectedProduct = products.find((product) => product.id === selectedProductId);
   const visibleCount = products.filter((product) => product.visible).length;
@@ -237,18 +367,35 @@ export default function AdminPage() {
     setActiveSection("productos");
   }
 
-  function saveProduct() {
-    setProducts((current) => {
-      const normalizedProduct = {
-        ...draftProduct,
-        category: draftProduct.categories[0] || draftProduct.category,
-      };
-      const exists = current.some((product) => product.id === normalizedProduct.id);
-      if (exists) return current.map((product) => (product.id === normalizedProduct.id ? normalizedProduct : product));
-      return [{ ...normalizedProduct, id: Date.now() }, ...current];
-    });
-    setSelectedProductId(draftProduct.id);
-    setNotice("Producto actualizado en esta sesión.");
+  async function saveProduct() {
+    const normalizedProduct = {
+      ...draftProduct,
+      category: draftProduct.categories[0] || draftProduct.category,
+    };
+
+    try {
+      await authedFetch("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: normalizedProduct.id,
+          name: normalizedProduct.name,
+          category: normalizedProduct.category,
+          price: normalizedProduct.price,
+          description: normalizedProduct.description,
+          visible: normalizedProduct.visible,
+          image_source: normalizedProduct.imageSource,
+        }),
+      });
+
+      setProducts((current) =>
+        current.map((product) => (product.id === normalizedProduct.id ? normalizedProduct : product)),
+      );
+      setSelectedProductId(normalizedProduct.id);
+      setNotice(`"${normalizedProduct.name}" guardado. Ya está actualizado en la tienda.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo guardar el producto.");
+    }
   }
 
   function addCategory() {
@@ -273,11 +420,18 @@ export default function AdminPage() {
     setBrands((current) => current.filter((item) => item !== brand));
   }
 
-  function saveSiteContent(nextContent: SiteContent) {
-    setSiteContent(nextContent);
-    window.localStorage.setItem(siteContentStorageKey, JSON.stringify(nextContent));
-    window.dispatchEvent(new CustomEvent("laneria-content-updated"));
-    setNotice("Contenido actualizado. Se reflejará en la tienda de este navegador.");
+  async function saveSiteContent(nextContent: SiteContent) {
+    try {
+      await authedFetch("/api/admin/content", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextContent),
+      });
+      setSiteContent(nextContent);
+      setNotice("Contenido publicado. Ya está visible en la tienda.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo guardar el contenido.");
+    }
   }
 
   return (
@@ -313,8 +467,43 @@ export default function AdminPage() {
             <p>Panel administrativo</p>
             <h1>Gestión de tienda</h1>
           </div>
-          <Link href="/">Ver tienda</Link>
+          <div className="admin-topbar-actions">
+            {token ? (
+              <button className="admin-session-out" onClick={signOut} type="button">Cerrar sesión</button>
+            ) : null}
+            <Link href="/">Ver tienda</Link>
+          </div>
         </header>
+
+        {!token && (
+          <form
+            className="admin-gate"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = tokenDraft.trim();
+              if (!value) return;
+              writeToken(value);
+              setTokenDraft("");
+              setNotice("Sesión iniciada. Ya puedes guardar cambios.");
+            }}
+          >
+            <div>
+              <strong>Modo lectura</strong>
+              <p>Ingresa la contraseña del panel para guardar cambios en la tienda.</p>
+            </div>
+            <label>
+              <span className="admin-gate-label">Contraseña del panel</span>
+              <input
+                autoComplete="current-password"
+                onChange={(event) => setTokenDraft(event.target.value)}
+                placeholder="Contraseña"
+                type="password"
+                value={tokenDraft}
+              />
+            </label>
+            <button type="submit">Entrar</button>
+          </form>
+        )}
 
         {notice && <div className="admin-notice">{notice}</div>}
 
@@ -483,6 +672,8 @@ export default function AdminPage() {
           <ContentPanel activeSection={activeSection} content={siteContent} onSave={saveSiteContent} />
         )}
 
+        {activeSection === "medios" && <MediaPanel authedFetch={authedFetch} canWrite={Boolean(token)} setNotice={setNotice} />}
+
         {activeSection === "reportes" && <SimplePanel title="Reportes" intro="Resumen de ventas, solicitudes y productos visibles. La conexión a métricas reales queda pendiente." items={["Productos visibles", "Solicitudes abiertas", "Cotizaciones pendientes"]} />}
         {activeSection === "administradores" && <UsersPanel admins={admins} setAdmins={setAdmins} />}
         {activeSection === "roles-y-permisos" && <SimplePanel title="Roles y permisos" intro="Define permisos para productos, contenido, reportes y solicitudes." items={["Administrador: catálogo, contenido, usuarios y configuración", "Editor: productos, categorías, marcas, banners y páginas", "Vendedor: contactos, cotizaciones y reportes"]} />}
@@ -604,9 +795,205 @@ function ManageListPanel({
   );
 }
 
+type MediaItem = {
+  id: number;
+  kv_key: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  created_at: string;
+  url: string;
+};
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function MediaPanel({
+  authedFetch,
+  canWrite,
+  setNotice,
+}: {
+  authedFetch: (url: string, init: RequestInit) => Promise<Response>;
+  canWrite: boolean;
+  setNotice: (message: string) => void;
+}) {
+  const [items, setItems] = useState<MediaItem[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [dragging, setDragging] = useState(false);
+
+  async function refresh() {
+    try {
+      const response = await fetch("/api/admin/media");
+      const { media } = (await response.json()) as { media: MediaItem[] };
+      setItems(media ?? []);
+    } catch {
+      setNotice("No se pudo cargar la biblioteca de medios.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const response = await fetch("/api/admin/media");
+        const { media } = (await response.json()) as { media: MediaItem[] };
+        if (!cancelled) setItems(media ?? []);
+      } catch {
+        if (!cancelled) setNotice("No se pudo cargar la biblioteca de medios.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [setNotice]);
+
+  async function upload(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (!list.length) return;
+
+    if (!canWrite) {
+      setNotice("Ingresa la contraseña del panel para subir imágenes.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const form = new FormData();
+      list.forEach((file) => form.append("files", file));
+
+      const response = await authedFetch("/api/admin/media", { method: "POST", body: form });
+      const result = (await response.json()) as {
+        uploaded: MediaItem[];
+        rejected: { filename: string; reason: string }[];
+      };
+
+      await refresh();
+
+      const parts: string[] = [];
+      if (result.uploaded.length) parts.push(`${result.uploaded.length} imagen(es) subida(s)`);
+      if (result.rejected.length) {
+        parts.push(result.rejected.map((item) => `${item.filename}: ${item.reason}`).join(" · "));
+      }
+      setNotice(parts.join(". "));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudieron subir las imágenes.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(item: MediaItem) {
+    if (!canWrite) {
+      setNotice("Ingresa la contraseña del panel para eliminar imágenes.");
+      return;
+    }
+    if (!window.confirm(`¿Eliminar "${item.filename}"? Las fichas que la usen quedarán sin imagen.`)) return;
+
+    try {
+      await authedFetch(`/api/admin/media?key=${encodeURIComponent(item.kv_key)}`, { method: "DELETE" });
+      setItems((current) => current.filter((entry) => entry.kv_key !== item.kv_key));
+      setNotice(`"${item.filename}" eliminada.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo eliminar la imagen.");
+    }
+  }
+
+  async function copyUrl(item: MediaItem) {
+    await navigator.clipboard.writeText(item.url);
+    setNotice(`Ruta copiada: ${item.url} — pégala en "Imagen" de la ficha de producto.`);
+  }
+
+  return (
+    <section className="admin-panel">
+      <div className="admin-panel-heading">
+        <div>
+          <p>Contenido dinámico</p>
+          <h2>Medios</h2>
+        </div>
+        <span className="admin-panel-count">{items.length} archivo(s)</span>
+      </div>
+
+      <p className="admin-media-intro">
+        Sube varias imágenes a la vez. Formatos: JPG, PNG, WebP, GIF, AVIF y SVG, hasta 10 MB cada una.
+        Copia la ruta de una imagen y pégala en el campo &quot;Imagen&quot; de la ficha de producto.
+      </p>
+
+      <label
+        className={dragging ? "admin-dropzone admin-dropzone-active" : "admin-dropzone"}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          setDragging(false);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          upload(event.dataTransfer.files);
+        }}
+      >
+        <input
+          accept="image/*"
+          disabled={busy}
+          multiple
+          onChange={(event) => {
+            if (event.target.files) upload(event.target.files);
+            event.target.value = "";
+          }}
+          type="file"
+        />
+        <strong>{busy ? "Subiendo…" : "Arrastra imágenes aquí o haz clic para elegirlas"}</strong>
+        <small>Puedes seleccionar varias a la vez</small>
+      </label>
+
+      {loading ? (
+        <p className="admin-media-empty">Cargando biblioteca…</p>
+      ) : items.length === 0 ? (
+        <p className="admin-media-empty">Todavía no hay imágenes cargadas.</p>
+      ) : (
+        <div className="admin-media-grid">
+          {items.map((item) => (
+            <figure className="admin-media-card" key={item.kv_key}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt={item.filename} loading="lazy" src={item.url} />
+              <figcaption>
+                <strong title={item.filename}>{item.filename}</strong>
+                <small>{formatSize(item.size)}</small>
+              </figcaption>
+              <div className="admin-media-actions">
+                <button onClick={() => copyUrl(item)} type="button">Copiar ruta</button>
+                <button onClick={() => remove(item)} type="button">Eliminar</button>
+              </div>
+            </figure>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ContentPanel({ activeSection, content, onSave }: { activeSection: AdminSection; content: SiteContent; onSave: (content: SiteContent) => void }) {
   const [draft, setDraft] = useState(content);
-  useEffect(() => setDraft(content), [content]);
+  // Ajuste durante el render: al guardarse el contenido, el borrador se
+  // reinicia sin pasar por un efecto.
+  const [syncedContent, setSyncedContent] = useState(content);
+  if (syncedContent !== content) {
+    setSyncedContent(content);
+    setDraft(content);
+  }
   const data = activeSection === "banners" ? contentItems.banners : activeSection === "paginas" ? contentItems.paginas : contentItems.faqs;
   const title = activeSection === "banners" ? "Banners" : activeSection === "paginas" ? "Páginas" : "Preguntas frecuentes";
   const fields =

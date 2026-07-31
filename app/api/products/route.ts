@@ -37,7 +37,8 @@ export async function GET(request: Request) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT id, name, category, color, fiber, weight, length, needles, crochet,
-              price, kilo_price, dozen_price, image_source, color_count
+              price, kilo_price, dozen_price, image_source, image_position,
+              image_size, color_count, all_colors, visible, description
        FROM products ${clause}
        ORDER BY category, name
        LIMIT ? OFFSET ?`

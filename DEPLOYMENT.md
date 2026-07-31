@@ -20,6 +20,7 @@ la tienda sin necesidad de redesplegar.
 | Account ID | `f7f6884635183bbdf2c77577001262cb` |
 | D1 database | `lanas-el-siglo-db` |
 | D1 database ID | `2edb6cb8-e9e1-443a-aab9-be50396ae5db` |
+| KV namespace (medios) | `aadcce57d7584ffc89159f937fc24818` |
 | Región D1 | ENAM |
 | Repositorio | https://github.com/cnarojas1/lanas-el-siglo |
 
@@ -84,6 +85,11 @@ node scripts/generate-seed.mjs
 npx wrangler d1 execute lanas-el-siglo-db --file=db/seed.sql --remote
 ```
 
+⚠️ `seed.sql` empieza con `DELETE FROM products`, así que **recargarlo descarta
+los cambios hechos desde /admin** (precios, visibilidad, descripciones e
+imágenes asignadas). Úsalo para reconstruir el catálogo desde cero, no como
+actualización incremental.
+
 `catalog-data.ts` sigue existiendo como respaldo: si D1 no responde o está
 vacía, la home lo usa para no quedar sin catálogo.
 
@@ -99,6 +105,51 @@ El acceso a bindings dentro de rutas se hace con `import { env } from "cloudflar
 (ver `app/api/products/route.ts` y `db/index.ts`). El helper `json` de `next/server`
 **no existe** en vinext; usa `Response.json()`.
 
+## Panel de administración
+
+`/admin` es público, así que la autorización vive en la API: leer no requiere
+nada, pero **toda escritura exige la contraseña del panel**. Sin el secreto
+`ADMIN_TOKEN` configurado, las escrituras se rechazan (fail-closed) en vez de
+quedar abiertas.
+
+Cambiar la contraseña:
+
+```bash
+npx wrangler secret put ADMIN_TOKEN
+npx vinext deploy
+```
+
+La sesión se guarda en `sessionStorage` del navegador: se pierde al cerrar la
+pestaña y solo viaja como cabecera `Authorization`.
+
+Es una contraseña compartida, no cuentas por persona. Las secciones
+"Administradores" y "Roles y permisos" siguen siendo maquetas.
+
+### Qué se guarda de verdad
+
+| Sección | Persistencia |
+|---|---|
+| Banners, Páginas, Preguntas frecuentes | D1 (`site_content`) |
+| Listado de productos (precio, nombre, categoría, descripción, visibilidad, imagen) | D1 (`products`) |
+| Medios | KV (binario) + D1 (`media`) |
+| Categorías, Marcas, Contactos, Cotizaciones, Reportes, Administradores, Roles, Datos del sitio, SEO | Maqueta: solo la sesión actual |
+
+Un producto con `visible = 0` desaparece de la tienda pero sigue en el panel.
+
+### Medios
+
+Sube varias imágenes a la vez (clic o arrastrando). Se aceptan JPG, PNG, WebP,
+GIF, AVIF y SVG hasta 10 MB. "Copiar ruta" entrega una URL `/api/media/<clave>`
+para pegar en el campo *Imagen* de la ficha de producto.
+
+El binario vive en KV y los metadatos en D1. Lo natural sería R2, pero **R2 no
+está habilitado en la cuenta** (`code: 10042`): hay que activarlo desde el
+dashboard, lo que implica aceptar sus términos. KV admite hasta 25 MB por valor,
+suficiente para el catálogo actual.
+
+Las claves llevan un prefijo aleatorio, así que dos archivos con el mismo nombre
+no se pisan y las imágenes se sirven con caché inmutable de un año.
+
 ## Pendiente
 
 Lo que todavía NO está hecho, en orden de importancia:
@@ -108,11 +159,12 @@ Lo que todavía NO está hecho, en orden de importancia:
 2. **No hay checkout ni pagos.**
 3. **El inventario no se descuenta.** La tabla `inventory` tiene stock inicial,
    pero nada la consulta ni la actualiza al comprar.
-4. **No hay autenticación** ni panel de administración con persistencia
-   (`/admin` guarda textos en `localStorage` del navegador, no en D1).
+4. **El panel usa una contraseña compartida**, no cuentas por persona con
+   registro de quién cambió qué.
 5. **No hay CI/CD.** El deploy es manual con `npx vinext deploy`.
-6. **R2 no está habilitado** en la cuenta. Las imágenes se sirven como assets
-   estáticos del Worker, lo cual funciona bien para el volumen actual.
+6. **R2 no está habilitado** en la cuenta, así que los medios subidos viven en
+   KV. Funciona para el volumen actual; si la biblioteca crece mucho, conviene
+   habilitar R2 y migrarlos.
 
 ## Dominio propio
 

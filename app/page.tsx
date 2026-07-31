@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import Storefront from "./storefront";
 import { categories as fallbackCategories, products as fallbackProducts, type Product } from "./catalog-data";
+import { defaultSiteContent, type SiteContent } from "./site-content";
 
 // El catalogo vive en D1 y cambia sin redeploy, asi que la pagina se renderiza
 // por peticion en lugar de quedar congelada en el build.
@@ -62,6 +63,7 @@ async function loadCatalog(): Promise<{ products: Product[]; categories: string[
               price, kilo_price, dozen_price, image_source, image_position,
               image_size, color_count, colors_with_photo, all_colors
        FROM products
+       WHERE visible = 1
        ORDER BY id`
     ).all<ProductRow>();
 
@@ -78,7 +80,30 @@ async function loadCatalog(): Promise<{ products: Product[]; categories: string[
   }
 }
 
+/** Textos editados en /admin; las claves ausentes caen a los valores de fabrica. */
+async function loadSiteContent(): Promise<SiteContent> {
+  if (!env.DB) return defaultSiteContent;
+
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT key, value FROM site_content"
+    ).all<{ key: string; value: string }>();
+
+    const saved = Object.fromEntries(
+      results.filter((row) => row.key in defaultSiteContent).map((row) => [row.key, row.value])
+    );
+    return { ...defaultSiteContent, ...saved };
+  } catch (error) {
+    console.error("No se pudo leer el contenido del sitio desde D1:", error);
+    return defaultSiteContent;
+  }
+}
+
 export default async function Home() {
-  const { products, categories } = await loadCatalog();
-  return <Storefront products={products} categories={categories} />;
+  const [{ products, categories }, siteContent] = await Promise.all([
+    loadCatalog(),
+    loadSiteContent(),
+  ]);
+
+  return <Storefront products={products} categories={categories} siteContent={siteContent} />;
 }

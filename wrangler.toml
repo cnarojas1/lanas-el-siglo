@@ -9,6 +9,12 @@ binding = "DB"
 database_name = "lanas-el-siglo-db"
 database_id = "2edb6cb8-e9e1-443a-aab9-be50396ae5db"
 
+# Binarios de la biblioteca de medios del panel (/admin).
+# R2 seria el destino natural, pero no esta habilitado en la cuenta.
+[[kv_namespaces]]
+binding = "MEDIA"
+id = "aadcce57d7584ffc89159f937fc24818"
+
 # Variables de entorno
 [vars]
 SHOP_NAME = "Lanas el Siglo"
