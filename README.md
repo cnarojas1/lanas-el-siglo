@@ -1,13 +1,24 @@
-# vinext-starter
+# 🧶 Lanas el Siglo - Ecommerce
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Una plataforma de ecommerce para venta de lanas y fibras de tejido, construida con Next.js 16, Cloudflare Workers, D1 y React 19.
+
+Basado en [vinext](https://github.com/cloudflare/vinext) - full-stack starter para Cloudflare.
+
+## 🚀 Quick Deploy
+
+Ver [DEPLOYMENT.md](./DEPLOYMENT.md) para guía completa de despliegue en:
+- GitHub (repositorio)
+- Cloudflare Pages (frontend)
+- Cloudflare Workers (backend API)
+- Cloudflare D1 (base de datos)
+- Cloudflare R2 (almacenamiento)
 
 ## Prerequisites
 
 - Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+- Cuenta en [Cloudflare](https://cloudflare.com)
+- Cuenta en [GitHub](https://github.com)
+- (Linux con `flock`, `curl`, y GNU `timeout` para CI/CD)
 
 ## Sites Lifecycle
 
