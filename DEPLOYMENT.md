@@ -9,6 +9,9 @@ El sitio está desplegado y respondiendo en:
 Se despliega como **Cloudflare Worker con assets estáticos** (no Cloudflare Pages).
 No existe ni existirá un `lanas-el-siglo.pages.dev` con esta configuración.
 
+El catálogo se sirve desde D1 en cada petición: editar la base de datos cambia
+la tienda sin necesidad de redesplegar.
+
 ## Recursos en Cloudflare
 
 | Recurso | Valor |
@@ -54,13 +57,35 @@ npx wrangler d1 execute lanas-el-siglo-db --file=db/seed.sql --remote
 ```
 
 Tablas: `products`, `orders`, `order_items`, `inventory`, `users`, `carts`,
-`cart_items`.
+`cart_items`. Actualmente hay 36 productos en 6 categorías.
 
 Para consultar el contenido actual:
 
 ```bash
 npx wrangler d1 execute lanas-el-siglo-db --remote --command "SELECT COUNT(*) FROM products"
 ```
+
+### Editar el catálogo
+
+La home lee los productos desde D1 en cada petición, así que **un cambio en la
+base de datos aparece en el sitio sin recompilar ni redesplegar**:
+
+```bash
+npx wrangler d1 execute lanas-el-siglo-db --remote \
+  --command "UPDATE products SET price = 14000 WHERE id = 1"
+```
+
+`db/seed.sql` está **generado** a partir de `app/catalog-data.ts` por
+`scripts/generate-seed.mjs`; no lo edites a mano. Para reconstruirlo tras tocar
+el catálogo del bundle:
+
+```bash
+node scripts/generate-seed.mjs
+npx wrangler d1 execute lanas-el-siglo-db --file=db/seed.sql --remote
+```
+
+`catalog-data.ts` sigue existiendo como respaldo: si D1 no responde o está
+vacía, la home lo usa para no quedar sin catálogo.
 
 ## API
 
@@ -78,15 +103,13 @@ El acceso a bindings dentro de rutas se hace con `import { env } from "cloudflar
 
 Lo que todavía NO está hecho, en orden de importancia:
 
-1. **La web no usa D1.** `app/page.tsx` renderiza los 36 productos de
-   `app/catalog-data.ts` (archivo local). D1 tiene solo 9 productos cargados y
-   ninguna página los consulta. Para conectarlos hay que migrar el catálogo
-   completo a `db/seed.sql` y hacer que la home consuma `/api/products`.
-2. **El carrito es solo de navegador.** Vive en estado de React; no crea filas en
-   `orders` ni `order_items`.
-3. **No hay checkout ni pagos.**
+1. **El carrito es solo de navegador.** Vive en estado de React; no crea filas en
+   `orders` ni `order_items`. El pedido se envía copiándolo a WhatsApp.
+2. **No hay checkout ni pagos.**
+3. **El inventario no se descuenta.** La tabla `inventory` tiene stock inicial,
+   pero nada la consulta ni la actualiza al comprar.
 4. **No hay autenticación** ni panel de administración con persistencia
-   (`/admin` guarda textos en `localStorage`).
+   (`/admin` guarda textos en `localStorage` del navegador, no en D1).
 5. **No hay CI/CD.** El deploy es manual con `npx vinext deploy`.
 6. **R2 no está habilitado** en la cuenta. Las imágenes se sirven como assets
    estáticos del Worker, lo cual funciona bien para el volumen actual.
