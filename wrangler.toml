@@ -1,0 +1,37 @@
+name = "lanas-el-siglo"
+type = "javascript"
+account_id = ""  # Reemplazar con tu account ID de Cloudflare
+workers_dev = true
+compatibility_date = "2026-05-15"
+compatibility_flags = ["nodejs_compat"]
+
+# Base de datos D1 para órdenes, inventario, usuarios
+[[d1_databases]]
+binding = "DB"
+database_name = "lanas-el-siglo-db"
+database_id = ""  # Se genera al crear la DB en Cloudflare
+
+# R2 bucket para imágenes de productos
+[[r2_buckets]]
+binding = "PRODUCTS_BUCKET"
+bucket_name = "lanas-el-siglo-products"
+
+# Variables de entorno
+[vars]
+SHOP_NAME = "Lanas el Siglo"
+CURRENCY = "CLP"
+
+# Configuración de build
+[build]
+command = "npm run build:sites"
+cwd = "./"
+watch_paths = ["app/**/*.tsx", "app/**/*.ts"]
+
+[env.production]
+name = "lanas-el-siglo-prod"
+routes = [
+  { pattern = "lanaselsiglo.cl", zone_id = "" }  # Reemplazar con tu zone_id
+]
+
+[env.preview]
+name = "lanas-el-siglo-preview"
