@@ -50,7 +50,7 @@ export async function GET() {
  * Requiere ADMIN_TOKEN.
  */
 export async function POST(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB || !env.MEDIA) {
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
 
 /** DELETE /api/admin/media?key=... — borra un archivo. Requiere ADMIN_TOKEN. */
 export async function DELETE(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB || !env.MEDIA) {

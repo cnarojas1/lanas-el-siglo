@@ -111,7 +111,7 @@ export async function POST(request: Request) {
 
 /** GET /api/orders — cotizaciones registradas. Requiere ADMIN_TOKEN. */
 export async function GET(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB) {

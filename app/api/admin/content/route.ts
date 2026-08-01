@@ -17,7 +17,7 @@ export async function GET() {
 
 /** PUT /api/admin/content — guarda los textos. Requiere ADMIN_TOKEN. */
 export async function PUT(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB) {

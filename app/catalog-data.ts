@@ -23,6 +23,8 @@ export type Product = {
   needles: string;
   crochet: string;
   dozenPrice: string;
+  /** Descripcion del producto (editada en el panel). */
+  description?: string;
   /** Colores con foto propia. Vacio cuando el producto no tiene variantes. */
   variants?: ProductVariant[];
 };

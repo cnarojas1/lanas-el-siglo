@@ -32,6 +32,7 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.dev.vars
 !.env.example
 
 # vercel
@@ -44,3 +45,5 @@ next-env.d.ts
 /.sites-runtime/
 /outputs/
 /work/
+
+tsconfig.tsbuildinfo

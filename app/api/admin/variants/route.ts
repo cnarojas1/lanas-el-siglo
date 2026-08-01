@@ -12,6 +12,11 @@ type SeedPayload = {
   product_id?: number;
   codes?: string[];
   images?: string[];
+  variants?: {
+    code?: string;
+    color_name?: string;
+    image_source?: string;
+  }[];
   /** Codigos declarados del producto: nombran las fotos nuevas, no se crean solos. */
   available_codes?: string[];
 };
@@ -54,7 +59,7 @@ export async function GET(request: Request) {
  * que volver a pulsar el boton no duplica ni pisa las imagenes asignadas.
  */
 export async function POST(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB) {
@@ -83,9 +88,25 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .slice(0, 100);
 
-  if (!codes.length && !images.length) {
+  const requestedVariants = (payload.variants ?? [])
+    .map((variant) => ({
+      code: String(variant.code ?? "").trim(),
+      color_name: String(variant.color_name ?? "").trim(),
+      image_source: String(variant.image_source ?? "").trim(),
+    }))
+    .filter((variant) => variant.code || variant.image_source)
+    .slice(0, 100);
+
+  if (!codes.length && !images.length && !requestedVariants.length) {
     return Response.json({ error: "No hay nada que agregar." }, { status: 400 });
   }
+
+  const { results: current } = await env.DB.prepare(
+    `SELECT id, code, image_source, sort_order FROM product_variants
+     WHERE product_id = ? ORDER BY sort_order, id`
+  )
+    .bind(productId)
+    .all<{ id: number; code: string; image_source: string; sort_order: number }>();
 
   const statements = codes.map((code, index) =>
     env.DB.prepare(
@@ -95,46 +116,65 @@ export async function POST(request: Request) {
     ).bind(productId, code, index)
   );
 
-  // Las fotos se reparten primero entre los codigos que aun no tienen imagen;
-  // las sobrantes crean codigos nuevos siguiendo la numeracion del producto.
-  if (images.length) {
-    const { results: current } = await env.DB.prepare(
-      `SELECT id, code, image_source, sort_order FROM product_variants
-       WHERE product_id = ? ORDER BY sort_order, id`
-    )
-      .bind(productId)
-      .all<{ id: number; code: string; image_source: string; sort_order: number }>();
+  const empty = current.filter((row) => !row.image_source);
 
-    const empty = current.filter((row) => !row.image_source);
+  // Los codigos nuevos salen de los que el producto ya declara (000, 001...);
+  // inventar "1, 2, 3" dejaria la foto en un codigo que la tienda no usa.
+  const used = new Set(current.map((row) => row.code));
+  const pool = (payload.available_codes ?? [])
+    .map((code) => String(code).trim())
+    .filter((code) => code && !used.has(code));
 
-    // Los codigos nuevos salen de los que el producto ya declara (000, 001...);
-    // inventar "1, 2, 3" dejaria la foto en un codigo que la tienda no usa.
-    const used = new Set(current.map((row) => row.code));
-    const pool = (payload.available_codes ?? [])
-      .map((code) => String(code).trim())
-      .filter((code) => code && !used.has(code));
+  const nextSortOrder =
+    current.reduce((max, row) => Math.max(max, Number(row.sort_order) || 0), 0) + 1;
+  let created = 0;
 
-    let created = 0;
+  const takeCode = (preferred?: string) => {
+    const code = preferred?.trim();
+    if (code) return code;
+    let next = pool.shift();
+    while (next && used.has(next)) next = pool.shift();
+    return next ?? nextCode(current, created + 1);
+  };
 
-    images.forEach((url, index) => {
-      const slot = empty[index];
-      if (slot) {
-        statements.push(
-          env.DB.prepare("UPDATE product_variants SET image_source = ? WHERE id = ?").bind(url, slot.id)
-        );
-        return;
-      }
+  for (const variant of requestedVariants) {
+    const code = takeCode(variant.code);
+    used.add(code);
+    created += 1;
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO product_variants (product_id, code, color_name, image_source, sort_order)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (product_id, code) DO UPDATE SET
+           color_name = excluded.color_name,
+           image_source = excluded.image_source`
+      ).bind(productId, code, variant.color_name, variant.image_source, nextSortOrder + created)
+    );
+  }
 
-      created += 1;
-      const code = pool.shift() ?? nextCode(current, created);
+  for (const [index, url] of images.entries()) {
+    const slot = empty[index];
+    if (slot) {
       statements.push(
-        env.DB.prepare(
-          `INSERT INTO product_variants (product_id, code, image_source, sort_order)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT (product_id, code) DO NOTHING`
-        ).bind(productId, code, url, current.length + created)
+        env.DB.prepare("UPDATE product_variants SET image_source = ? WHERE id = ?").bind(url, slot.id)
       );
-    });
+      continue;
+    }
+
+    created += 1;
+    const code = takeCode();
+    used.add(code);
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO product_variants (product_id, code, image_source, sort_order)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (product_id, code) DO UPDATE SET
+           image_source = CASE
+             WHEN product_variants.image_source = '' THEN excluded.image_source
+             ELSE product_variants.image_source
+           END`
+      ).bind(productId, code, url, nextSortOrder + created)
+    );
   }
 
   await env.DB.batch(statements);
@@ -151,7 +191,7 @@ export async function POST(request: Request) {
 
 /** PUT /api/admin/variants — actualiza color e imagen de una variante. */
 export async function PUT(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB) {
@@ -204,7 +244,7 @@ export async function PUT(request: Request) {
 
 /** DELETE /api/admin/variants?id=12 */
 export async function DELETE(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB) {

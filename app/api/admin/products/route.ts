@@ -13,7 +13,7 @@ type ProductPatch = {
 
 /** PUT /api/admin/products — actualiza un producto existente. Requiere ADMIN_TOKEN. */
 export async function PUT(request: Request) {
-  const auth = authorize(request);
+  const auth = await authorize(request);
   if (!auth.ok) return auth.response;
 
   if (!env.DB) {

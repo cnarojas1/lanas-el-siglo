@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { categories as catalogCategories, products as catalogProducts, type Product } from "../catalog-data";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
@@ -10,95 +9,27 @@ const money = new Intl.NumberFormat("es-CL", {
   maximumFractionDigits: 0,
 });
 
-type AdminProduct = Product & {
-  code: string;
-  description: string;
-  visible: boolean;
-  brand: string;
-  categories: string[];
-};
-
-type QuoteRequest = {
-  address: string;
-  detail: string;
-  email: string;
+type AdminProduct = {
+  id: number;
   name: string;
-  phone: string;
-  status: string;
-  type: "Contacto" | "Cotización";
+  category: string;
+  color: string;
+  fiber: string;
+  weight: string;
+  length: string;
+  needles: string;
+  crochet: string;
+  price: number;
+  dozenPrice: string;
+  imageSource: string;
+  imagePosition: string;
+  imageSize: string;
+  colorCount: number;
+  allColors: string;
+  visible: boolean;
+  description: string;
 };
 
-type SiteContent = {
-  bannerKitCta: string;
-  bannerKitText: string;
-  bannerKitTitle: string;
-  bannerColorsCta: string;
-  bannerColorsText: string;
-  bannerColorsTitle: string;
-  catalogIntro: string;
-  catalogTitle: string;
-  faqAnswer: string;
-  faqQuestion: string;
-  heroCta: string;
-  heroEyebrow: string;
-  heroText: string;
-  heroTitle: string;
-  storyText: string;
-  storyTitle: string;
-};
-
-type AdminSection =
-  | "resumen"
-  | "productos"
-  | "categorias"
-  | "marcas"
-  | "contactos"
-  | "cotizaciones"
-  | "banners"
-  | "medios"
-  | "paginas"
-  | "preguntas-frecuentes"
-  | "reportes"
-  | "administradores"
-  | "roles-y-permisos"
-  | "datos-del-sitio"
-  | "seo";
-
-const initialProducts: AdminProduct[] = catalogProducts.map((product) => ({
-  ...product,
-  code: product.allColors.split(",")[0]?.trim() || `LS-${String(product.id).padStart(3, "0")}`,
-  description: `${product.name} ${product.weight}, ${product.fiber}. Disponible en ${product.color}.`,
-  visible: true,
-  brand: product.name.split(" ")[0] || "El Siglo",
-  categories: [product.category],
-}));
-
-const initialCategories = catalogCategories.filter((category) => category !== "Todas");
-const initialBrands = Array.from(new Set(initialProducts.map((product) => product.brand)));
-const adminTokenStorageKey = "laneria-el-siglo-admin-token";
-
-// La sesion del panel vive en sessionStorage. Se expone como store externo para
-// leerla sin sincronizar estado dentro de un efecto.
-const tokenListeners = new Set<() => void>();
-
-function readToken() {
-  return window.sessionStorage.getItem(adminTokenStorageKey) ?? "";
-}
-
-function writeToken(value: string) {
-  if (value) window.sessionStorage.setItem(adminTokenStorageKey, value);
-  else window.sessionStorage.removeItem(adminTokenStorageKey);
-  tokenListeners.forEach((listener) => listener());
-}
-
-function subscribeToken(listener: () => void) {
-  tokenListeners.add(listener);
-  return () => {
-    tokenListeners.delete(listener);
-  };
-}
-
-/** Fila tal como la entrega /api/products. */
 type ProductRow = {
   id: number;
   name: string;
@@ -120,6 +51,383 @@ type ProductRow = {
   description: string;
 };
 
+type AdminSection = "resumen" | "productos" | "categorias" | "cotizaciones" | "usuarios";
+
+const adminSessionKey = "laneria-el-siglo-admin-session";
+
+const sessionListeners = new Set<() => void>();
+
+type Session = {
+  token: string;
+  user: { id?: number; name: string; email: string; role: string };
+} | null;
+
+// useSyncExternalStore exige que getSnapshot devuelva la MISMA referencia cada
+// vez que el valor no cambio. Parsear y crear un objeto nuevo en cada llamada es
+// interpretado por React como "el store cambio siempre" y entra en un bucle de
+// re-render ("Maximum update depth exceeded"). Cacheamos el snapshot y solo
+// devolvemos una referencia nueva cuando sessionStorage cambia de verdad.
+let cachedRaw: string | null;
+let cachedSession: Session;
+
+function getSessionSnapshot(): Session {
+  try {
+    const raw = window.sessionStorage.getItem(adminSessionKey);
+    if (raw === cachedRaw) return cachedSession;
+    cachedRaw = raw;
+    if (raw) cachedSession = JSON.parse(raw) as Session;
+    else cachedSession = null;
+    return cachedSession;
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(session: Session) {
+  if (session) window.sessionStorage.setItem(adminSessionKey, JSON.stringify(session));
+  else window.sessionStorage.removeItem(adminSessionKey);
+  sessionListeners.forEach((listener) => listener());
+}
+
+function subscribeSession(listener: () => void) {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
+
+const NAV: { id: AdminSection; label: string }[] = [
+  { id: "resumen", label: "Resumen" },
+  { id: "productos", label: "Productos" },
+  { id: "categorias", label: "Categorías" },
+  { id: "cotizaciones", label: "Cotizaciones" },
+  { id: "usuarios", label: "Usuarios" },
+];
+
+const roleName: Record<string, string> = {
+  admin: "Administrador",
+  editor: "Editor",
+  viewer: "Solo lectura",
+};
+
+export default function AdminPage() {
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, () => null);
+  const [activeSection, setActiveSection] = useState<AdminSection>("resumen");
+  const [notice, setNotice] = useState("");
+
+  function signOut() {
+    writeSession(null);
+    setActiveSection("resumen");
+    setNotice("Sesión cerrada.");
+  }
+
+  const canWrite = Boolean(session && session.user.role !== "viewer");
+  const isAdmin = Boolean(session && session.user.role === "admin");
+
+  return (
+    <main className="admin-shell">
+      <aside className="admin-sidebar">
+        <Link className="admin-brand" href="/">
+          Lanería El Siglo
+        </Link>
+        <nav aria-label="Panel administrativo">
+          {NAV.map((item) => (
+            <button
+              className={activeSection === item.id ? "admin-nav-active" : ""}
+              key={item.id}
+              onClick={() => {
+                setActiveSection(item.id);
+              }}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <section className="admin-main">
+        <header className="admin-topbar">
+          <div>
+            <p>Panel administrativo</p>
+            <h1>Gestión de tienda</h1>
+          </div>
+          <div className="admin-topbar-actions">
+            {session && (
+              <span className="admin-session-user">
+                {session.user.name}
+                <em>{roleName[session.user.role] ?? session.user.role}</em>
+              </span>
+            )}
+            {session ? (
+              <button className="admin-session-out" onClick={signOut} type="button">
+                Cerrar sesión
+              </button>
+            ) : null}
+            <Link href="/">Ver tienda</Link>
+          </div>
+        </header>
+
+        {!session ? (
+          <LoginForm setNotice={setNotice} />
+        ) : (
+          <>
+            {notice && <div className="admin-notice">{notice}</div>}
+            {activeSection === "resumen" && (
+              <ResumenPanel setActiveSection={setActiveSection} canWrite={canWrite} />
+            )}
+            {activeSection === "productos" && (
+              <ProductsContainer canWrite={canWrite} session={session} setNotice={setNotice} />
+            )}
+            {activeSection === "categorias" && (
+              <CategoriesPanel canWrite={canWrite} session={session} setNotice={setNotice} />
+            )}
+            {activeSection === "cotizaciones" && (
+              <OrdersPanel canWrite={canWrite} session={session} />
+            )}
+            {activeSection === "usuarios" &&
+              (isAdmin ? (
+                <UsersPanel setNotice={setNotice} session={session} />
+              ) : (
+                <p className="admin-media-empty">
+                  Solo un administrador puede gestionar usuarios.
+                </p>
+              ))}
+          </>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function LoginForm({ setNotice }: { setNotice: (message: string) => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!email.trim() || !password) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/admin/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const body = (await response.json()) as {
+        token?: string;
+        user?: { id: number; name: string; email: string; role: string };
+        error?: string;
+      };
+      if (!response.ok || !body.token || !body.user) {
+        setNotice(body.error ?? "No se pudo iniciar sesión.");
+        return;
+      }
+      writeSession({ token: body.token, user: body.user });
+      setNotice(`Bienvenido/a, ${body.user.name}.`);
+    } catch {
+      setNotice("No se pudo iniciar sesión. Revisa tu conexión.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="admin-gate" onSubmit={submit}>
+      <div>
+        <strong>Iniciar sesión</strong>
+        <p>Ingresa tu correo y contraseña para gestionar la tienda.</p>
+      </div>
+      <label>
+        <span className="admin-gate-label">Correo</span>
+        <input
+          autoComplete="email"
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="usuario@laneriaelsiglo.cl"
+          type="email"
+          value={email}
+        />
+      </label>
+      <label>
+        <span className="admin-gate-label">Contraseña</span>
+        <input
+          autoComplete="current-password"
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="Contraseña"
+          type="password"
+          value={password}
+        />
+      </label>
+      <button disabled={busy} type="submit">
+        {busy ? "Ingresando…" : "Entrar"}
+      </button>
+    </form>
+  );
+}
+
+/** Envuelve las escrituras con una sesion valida. Devuelve el cuerpo (o lanza). */
+async function sessionFetch(session: { token: string } | null, url: string, init: RequestInit) {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      Authorization: `Bearer ${session?.token ?? ""}`,
+    },
+  });
+  let body: Record<string, unknown>;
+  try {
+    body = (await response.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  if (!response.ok) {
+    throw new Error(
+      typeof body.error === "string"
+        ? body.error
+        : `Error ${response.status}`
+    );
+  }
+  return { response, body };
+}
+
+function ResumenPanel({
+  setActiveSection,
+  canWrite,
+}: {
+  setActiveSection: (section: AdminSection) => void;
+  canWrite: boolean;
+}) {
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [categories, setCategories] = useState<{ category: string; total: number }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [productsResponse, categoriesResponse] = await Promise.all([
+          fetch("/api/products?limit=100"),
+          fetch("/api/admin/categories"),
+        ]);
+        if (cancelled) return;
+        if (productsResponse.ok) {
+          const { data } = (await productsResponse.json()) as { data: ProductRow[] };
+          if (data) setProducts(data.map(toAdminProduct));
+        }
+        if (categoriesResponse.ok) {
+          const { categories: list } = (await categoriesResponse.json()) as {
+            categories: { category: string; total: number }[];
+          };
+          if (list) setCategories(list);
+        }
+      } catch {
+        // silencioso: resumen no bloqueante
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visibleCount = products.filter((product) => product.visible).length;
+  const priced = products.filter((product) => product.price > 0);
+  const average = Math.round(
+    priced.reduce((sum, product) => sum + product.price, 0) / Math.max(priced.length, 1)
+  );
+
+  return (
+    <>
+      <section className="admin-stats">
+        <article>
+          <span>Productos</span>
+          <strong>{products.length}</strong>
+          <p>Entradas en catálogo</p>
+        </article>
+        <article>
+          <span>Visibles</span>
+          <strong>{visibleCount}</strong>
+          <p>Publicados en la tienda</p>
+        </article>
+        <article>
+          <span>Categorías</span>
+          <strong>{categories.length}</strong>
+          <p>Familias de lanas</p>
+        </article>
+        <article>
+          <span>Precio promedio</span>
+          <strong>{average > 0 ? money.format(average) : "—"}</strong>
+          <p>Productos con precio</p>
+        </article>
+      </section>
+
+      <section className="admin-grid">
+        <article className="admin-panel">
+          <div className="admin-panel-heading">
+            <div>
+              <p>Catálogo</p>
+              <h2>Productos</h2>
+            </div>
+            <button onClick={() => setActiveSection("productos")} type="button">
+              Gestionar
+            </button>
+          </div>
+          <div className="admin-category-list">
+            <div>
+              <strong>{visibleCount} visibles</strong>
+              <span>{products.length - visibleCount} ocultos</span>
+              <small>Edita nombre, precio, categoría y fotos</small>
+            </div>
+          </div>
+        </article>
+
+        <article className="admin-panel">
+          <div className="admin-panel-heading">
+            <div>
+              <p>Catálogo</p>
+              <h2>Categorías</h2>
+            </div>
+            <button onClick={() => setActiveSection("categorias")} type="button">
+              Gestionar
+            </button>
+          </div>
+          <div className="admin-category-list">
+            {categories.slice(0, 6).map((group) => (
+              <div key={group.category}>
+                <strong>{group.category}</strong>
+                <span>{group.total} producto(s)</span>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      {canWrite && (
+        <section className="admin-panel">
+          <div className="admin-panel-heading">
+            <div>
+              <p>Accesos rápidos</p>
+              <h2>Para empezar</h2>
+            </div>
+          </div>
+          <div className="admin-content-map">
+            <button onClick={() => setActiveSection("productos")} type="button">
+              Editar productos
+            </button>
+            <button onClick={() => setActiveSection("categorias")} type="button">
+              Organizar categorías
+            </button>
+            <button onClick={() => setActiveSection("cotizaciones")} type="button">
+              Ver cotizaciones
+            </button>
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
 function toAdminProduct(row: ProductRow): AdminProduct {
   return {
     id: row.id,
@@ -132,562 +440,121 @@ function toAdminProduct(row: ProductRow): AdminProduct {
     needles: row.needles,
     crochet: row.crochet,
     price: row.price,
-    dozenPrice: row.dozen_price,
-    imageSource: row.image_source,
-    imagePosition: row.image_position,
-    imageSize: row.image_size,
-    colorCount: row.color_count,
-    colorsWithPhoto: "",
-    allColors: row.all_colors,
-    code: row.all_colors.split(",")[0]?.trim() || `LS-${String(row.id).padStart(3, "0")}`,
-    description: row.description,
+    dozenPrice: row.dozen_price ?? "",
+    imageSource: row.image_source ?? "",
+    imagePosition: row.image_position ?? "center",
+    imageSize: row.image_size ?? "cover",
+    colorCount: row.color_count ?? 1,
+    allColors: row.all_colors ?? "",
     visible: row.visible === 1,
-    brand: row.name.split(" ")[0] || "El Siglo",
-    categories: [row.category],
+    description: row.description ?? "",
   };
 }
 
-const defaultSiteContent: SiteContent = {
-  bannerKitCta: "Explorar kits",
-  bannerKitText: "Elige tus ovillos favoritos y encuentra los básicos para darle forma a tu próxima idea.",
-  bannerKitTitle: "Arma tu primer kit de tejido",
-  bannerColorsCta: "Ver colores",
-  bannerColorsText: "Terracotas, verdes y rosas suaves para combinar sin complicaciones.",
-  bannerColorsTitle: "Colores que se sienten tan bien como se ven",
-  catalogIntro: "Listado actualizado desde la planilla: composición, gramaje, metraje, palillos, crochet y colores disponibles.",
-  catalogTitle: "Catálogo de productos",
-  faqAnswer: "Despachamos a todo Chile. Los tiempos y costos se confirman al cerrar la compra.",
-  faqQuestion: "¿Realizan despachos?",
-  heroCta: "Ver catálogo",
-  heroEyebrow: "COLOR, TEXTURA Y CALIDEZ",
-  heroText: "Encuentra fibras suaves, colores únicos y todo lo que necesitas para tu próximo proyecto.",
-  heroTitle: "Lanas para crear a tu manera",
-  storyText: "Seleccionamos fibras agradables al tacto, colores fáciles de combinar y formatos simples para que comprar sea tan entretenido como tejer.",
-  storyTitle: "Tu próxima creación comienza con una buena lana",
-};
+function ProductsContainer({
+  canWrite,
+  session,
+  setNotice,
+}: {
+  canWrite: boolean;
+  session: { token: string } | null;
+  setNotice: (message: string) => void;
+}) {
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
 
-const sidebarGroups: { title: string; items: { id: AdminSection; label: string }[] }[] = [
-  { title: "Dashboard", items: [{ id: "resumen", label: "Resumen" }] },
-  {
-    title: "Productos",
-    items: [
-      { id: "productos", label: "Listado de productos" },
-      { id: "categorias", label: "Categorías" },
-      { id: "marcas", label: "Marcas" },
-    ],
-  },
-  {
-    title: "Solicitudes",
-    items: [
-      { id: "contactos", label: "Contactos" },
-      { id: "cotizaciones", label: "Cotizaciones" },
-    ],
-  },
-  {
-    title: "Contenido",
-    items: [
-      { id: "banners", label: "Banners" },
-      { id: "medios", label: "Medios" },
-      { id: "paginas", label: "Páginas" },
-      { id: "preguntas-frecuentes", label: "Preguntas frecuentes" },
-    ],
-  },
-  { title: "Reportes", items: [{ id: "reportes", label: "Ventas y solicitudes" }] },
-  {
-    title: "Usuarios",
-    items: [
-      { id: "administradores", label: "Administradores" },
-      { id: "roles-y-permisos", label: "Roles y permisos" },
-    ],
-  },
-  {
-    title: "Configuración",
-    items: [
-      { id: "datos-del-sitio", label: "Datos del sitio" },
-      { id: "seo", label: "SEO" },
-    ],
-  },
-];
+  const selected = products.find((product) => product.id === selectedId) ?? products[0];
 
-const requests: QuoteRequest[] = [
-  { address: "Av. Providencia 1245, Santiago", email: "maria.fuentes@email.cl", name: "Maria Fuentes", phone: "+56 9 8123 4567", type: "Cotización", detail: "12 ovillos Merino Gold 200 Lisa en tonos morado y blanco. Solicita despacho a domicilio.", status: "Pendiente" },
-  { address: "Los Aromos 440, Ñuñoa", email: "taller@lastramas.cl", name: "Taller Las Tramas", phone: "+56 9 7234 8890", type: "Contacto", detail: "Consulta disponibilidad de colores baby para taller de tejido infantil.", status: "Nuevo" },
-  { address: "Camino El Alba 9800, Las Condes", email: "carolina.vidal@email.cl", name: "Carolina Vidal", phone: "+56 9 6655 7711", type: "Cotización", detail: "Kit batik surtido: Sweet Baby, Tanja Batik y Favori Batik. Requiere precio por docena.", status: "En revisión" },
-];
-
-const contentItems = {
-  banners: [
-    { title: "Banner principal", area: "Inicio", status: "Activo" },
-    { title: "Banner colores", area: "Catálogo", status: "Activo" },
-  ],
-  paginas: [
-    { title: "Inicio", area: "Página principal", status: "Publicado" },
-    { title: "Catálogo", area: "Listado de productos", status: "Publicado" },
-    { title: "Nosotros", area: "Historia de la tienda", status: "Publicado" },
-  ],
-  faqs: [
-    { title: "Despachos", area: "Preguntas frecuentes", status: "Borrador" },
-    { title: "Cambios y devoluciones", area: "Preguntas frecuentes", status: "Borrador" },
-  ],
-};
-
-const blankProduct = (categories: string[]): AdminProduct => ({
-  id: Date.now(),
-  name: "",
-  category: categories[0] || "Lanas baby",
-  color: "1 color",
-  price: 0,
-  weight: "100g",
-  fiber: "",
-  imageSource: "/productos-lanas.png",
-  imagePosition: "center",
-  imageSize: "cover",
-  colorCount: 1,
-  colorsWithPhoto: "",
-  allColors: "",
-  length: "",
-  needles: "",
-  crochet: "",
-  dozenPrice: "",
-  code: "",
-  description: "",
-  visible: true,
-  brand: "El Siglo",
-  categories: [categories[0] || "Lanas baby"],
-});
-
-export default function AdminPage() {
-  const [activeSection, setActiveSection] = useState<AdminSection>("resumen");
-  const [products, setProducts] = useState<AdminProduct[]>(initialProducts);
-  const [categories, setCategories] = useState<string[]>(initialCategories);
-  const [brands, setBrands] = useState<string[]>(initialBrands);
-  const [selectedProductId, setSelectedProductId] = useState<number>(initialProducts[0]?.id ?? 0);
-  const [draftProduct, setDraftProduct] = useState<AdminProduct>(() => initialProducts[0] ?? blankProduct(initialCategories));
-  const [newCategory, setNewCategory] = useState("");
-  const [newBrand, setNewBrand] = useState("");
-  const [notice, setNotice] = useState("Cambios locales: conecta una base de datos para guardar en producción.");
-  const [selectedRequest, setSelectedRequest] = useState<QuoteRequest>(requests[0]);
-  const [siteContent, setSiteContent] = useState<SiteContent>(defaultSiteContent);
-  const [admins, setAdmins] = useState([
-    { name: "Administrador principal", email: "admin@laneriaelsiglo.cl", role: "Administrador", permissions: "Catálogo, contenido, usuarios" },
-    { name: "Editor catálogo", email: "catalogo@laneriaelsiglo.cl", role: "Editor", permissions: "Productos, categorías, marcas" },
-    { name: "Vendedor", email: "ventas@laneriaelsiglo.cl", role: "Vendedor", permissions: "Solicitudes y cotizaciones" },
-  ]);
-
-  // La sesion se pierde al cerrar la pestana y solo viaja como cabecera Authorization.
-  const token = useSyncExternalStore(subscribeToken, readToken, () => "");
-  const [tokenDraft, setTokenDraft] = useState("");
-
-  // Los textos y el catalogo son los que ve el publico: se leen de D1.
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [contentResponse, productsResponse] = await Promise.all([
-          fetch("/api/admin/content"),
-          fetch("/api/products?limit=100"),
-        ]);
-
-        if (cancelled) return;
-
-        if (contentResponse.ok) {
-          const { content } = (await contentResponse.json()) as { content: Record<string, string> };
-          setSiteContent({ ...defaultSiteContent, ...content });
+  async function refresh() {
+    try {
+      const [productsResponse, categoriesResponse] = await Promise.all([
+        fetch("/api/products?limit=100"),
+        fetch("/api/admin/categories"),
+      ]);
+      if (productsResponse.ok) {
+        const { data } = (await productsResponse.json()) as { data: ProductRow[] };
+        if (data?.length) {
+          setProducts(data.map(toAdminProduct));
+          setSelectedId((current) => {
+            if (current && data.some((row) => row.id === current)) return current;
+            return data[0].id;
+          });
         }
-
-        if (productsResponse.ok) {
-          const { data } = (await productsResponse.json()) as { data: ProductRow[] };
-          if (data?.length) {
-            const mapped = data.map(toAdminProduct);
-            setProducts(mapped);
-            setCategories(Array.from(new Set(mapped.map((product) => product.category))));
-            setSelectedProductId(mapped[0].id);
-            setDraftProduct(mapped[0]);
-          }
-        }
-      } catch {
-        if (!cancelled) setNotice("No se pudo cargar el contenido desde la base de datos.");
       }
+      if (categoriesResponse.ok) {
+        const { categories: list } = (await categoriesResponse.json()) as {
+          categories: { category: string }[];
+        };
+        if (list) setCategories(list.map((item) => item.category));
+      }
+    } catch {
+      setNotice("No se pudo cargar el catálogo.");
+    } finally {
+      setLoading(false);
     }
+  }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function signOut() {
-    writeToken("");
-    setNotice("Sesión cerrada.");
-  }
-
-  /** Envuelve las escrituras: adjunta el token y traduce los errores comunes. */
-  async function authedFetch(url: string, init: RequestInit) {
-    const response = await fetch(url, {
-      ...init,
-      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` },
-    });
-
-    if (response.status === 401) {
-      signOut();
-      throw new Error(
-        "Tu sesión terminó (se pierde al cerrar la pestaña). Vuelve a ingresar la contraseña del panel."
-      );
-    }
-
-    if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `Error ${response.status}`);
-    }
-
-    return response;
-  }
-
-  const selectedProduct = products.find((product) => product.id === selectedProductId);
-  const visibleCount = products.filter((product) => product.visible).length;
-  const pricedProducts = products.filter((product) => product.price > 0);
-  const averagePrice = Math.round(pricedProducts.reduce((sum, product) => sum + product.price, 0) / Math.max(pricedProducts.length, 1));
-
-  const productsByCategory = useMemo(
-    () => categories.map((category) => ({ category, total: products.filter((product) => product.categories.includes(category)).length })),
-    [categories, products],
-  );
-  const maxCategoryTotal = Math.max(...productsByCategory.map((group) => group.total), 1);
-  const dashboardTrend = [
-    { label: "Lun", value: 6 },
-    { label: "Mar", value: 11 },
-    { label: "Mié", value: 8 },
-    { label: "Jue", value: 15 },
-    { label: "Vie", value: requests.length + visibleCount },
-  ];
-  const maxTrend = Math.max(...dashboardTrend.map((item) => item.value), 1);
-
-  function openProduct(product: AdminProduct) {
-    setSelectedProductId(product.id);
-    setDraftProduct({ ...product });
-    setActiveSection("productos");
-  }
-
-  async function saveProduct() {
-    const normalizedProduct = {
-      ...draftProduct,
-      category: draftProduct.categories[0] || draftProduct.category,
-    };
-
-    try {
-      await authedFetch("/api/admin/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: normalizedProduct.id,
-          name: normalizedProduct.name,
-          category: normalizedProduct.category,
-          price: normalizedProduct.price,
-          description: normalizedProduct.description,
-          visible: normalizedProduct.visible,
-          image_source: normalizedProduct.imageSource,
-        }),
-      });
-
-      setProducts((current) =>
-        current.map((product) => (product.id === normalizedProduct.id ? normalizedProduct : product)),
-      );
-      setSelectedProductId(normalizedProduct.id);
-      setNotice(`"${normalizedProduct.name}" guardado. Ya está actualizado en la tienda.`);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo guardar el producto.");
-    }
-  }
-
-  function addCategory() {
-    const value = newCategory.trim();
-    if (!value || categories.includes(value)) return;
-    setCategories((current) => [...current, value]);
-    setNewCategory("");
-  }
-
-  function removeCategory(category: string) {
-    setCategories((current) => current.filter((item) => item !== category));
-  }
-
-  function addBrand() {
-    const value = newBrand.trim();
-    if (!value || brands.includes(value)) return;
-    setBrands((current) => [...current, value]);
-    setNewBrand("");
-  }
-
-  function removeBrand(brand: string) {
-    setBrands((current) => current.filter((item) => item !== brand));
-  }
-
-  async function saveSiteContent(nextContent: SiteContent) {
-    try {
-      await authedFetch("/api/admin/content", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextContent),
-      });
-      setSiteContent(nextContent);
-      setNotice("Contenido publicado. Ya está visible en la tienda.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo guardar el contenido.");
-    }
-  }
+  if (loading) return <p className="admin-media-empty">Cargando productos…</p>;
 
   return (
-    <main className="admin-shell">
-      <aside className="admin-sidebar">
-        <Link className="admin-brand" href="/">
-          Lanería El Siglo
-        </Link>
-        <nav aria-label="Panel administrativo">
-          {sidebarGroups.map((group) => (
-            <section key={group.title}>
-              <h2>{group.title}</h2>
-              {group.items.map((item) => (
-                <button
-                  className={activeSection === item.id ? "admin-nav-active" : ""}
-                  key={item.id}
-                  onClick={() => {
-                    setActiveSection(item.id);
-                  }}
-                  type="button"
-                >
-                  {item.label}
-                </button>
-              ))}
-            </section>
-          ))}
-        </nav>
-      </aside>
-
-      <section className="admin-main">
-        <header className="admin-topbar">
+    <section className="admin-grid admin-products-layout">
+      <article className="admin-panel admin-products-list">
+        <div className="admin-panel-heading">
           <div>
-            <p>Panel administrativo</p>
-            <h1>Gestión de tienda</h1>
+            <p>Productos</p>
+            <h2>Listado de productos</h2>
           </div>
-          <div className="admin-topbar-actions">
-            {token ? (
-              <button className="admin-session-out" onClick={signOut} type="button">Cerrar sesión</button>
-            ) : null}
-            <Link href="/">Ver tienda</Link>
+          <span className="admin-panel-count">{products.length} producto(s)</span>
+        </div>
+        {products.length === 0 ? (
+          <p className="admin-media-empty">No hay productos.</p>
+        ) : (
+          <div className="admin-table">
+            {products.map((product) => (
+              <button
+                className={
+                  product.id === selected?.id
+                    ? "admin-row admin-row-button admin-row-selected"
+                    : "admin-row admin-row-button"
+                }
+                key={product.id}
+                onClick={() => setSelectedId(product.id)}
+                type="button"
+              >
+                <ProductThumb product={product} />
+                <div>
+                  <strong>{product.name}</strong>
+                  <small className="admin-row-detail">
+                    {product.weight} · {product.fiber || "—"} · {product.category}
+                  </small>
+                </div>
+                <b>{product.price > 0 ? money.format(product.price) : "Consultar"}</b>
+                <em>{product.visible ? "Visible" : "Oculto"}</em>
+              </button>
+            ))}
           </div>
-        </header>
-
-        {!token && (
-          <form
-            className="admin-gate"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const value = tokenDraft.trim();
-              if (!value) return;
-              writeToken(value);
-              setTokenDraft("");
-              setNotice("Sesión iniciada. Ya puedes guardar cambios.");
-            }}
-          >
-            <div>
-              <strong>Modo lectura</strong>
-              <p>Ingresa la contraseña del panel para guardar cambios en la tienda.</p>
-            </div>
-            <label>
-              <span className="admin-gate-label">Contraseña del panel</span>
-              <input
-                autoComplete="current-password"
-                onChange={(event) => setTokenDraft(event.target.value)}
-                placeholder="Contraseña"
-                type="password"
-                value={tokenDraft}
-              />
-            </label>
-            <button type="submit">Entrar</button>
-          </form>
         )}
+      </article>
 
-        {notice && <div className="admin-notice">{notice}</div>}
-
-        {activeSection === "resumen" && (
-          <>
-            <section className="admin-stats">
-              <article><span>Productos</span><strong>{products.length}</strong><p>Entradas cargadas por categoría</p></article>
-              <article><span>Visibles</span><strong>{visibleCount}</strong><p>Productos publicados en catálogo</p></article>
-              <article><span>Categorías</span><strong>{categories.length}</strong><p>Familias principales de lanas</p></article>
-              <article><span>Precio promedio</span><strong>{money.format(averagePrice)}</strong><p>Calculado sobre productos con precio</p></article>
-            </section>
-
-            <section className="admin-grid">
-              <article className="admin-panel">
-                <div className="admin-panel-heading"><div><p>Productos</p><h2>Listado de productos</h2></div><button onClick={() => setActiveSection("productos")} type="button">Entrar</button></div>
-                <div className="admin-table">
-                  {products.map((product) => (
-                    <button className="admin-row admin-row-button" key={product.id} onClick={() => openProduct(product)} type="button">
-                      <ProductThumb product={product} />
-                      <div><strong>{product.name}</strong><small>{product.categories.join(", ")} / {product.code}</small></div>
-                      <b>{product.price > 0 ? money.format(product.price) : "Consultar"}</b>
-                      <em>{product.visible ? "Visible" : "Oculto"}</em>
-                    </button>
-                  ))}
-                </div>
-              </article>
-
-              <article className="admin-panel">
-                <div className="admin-panel-heading"><div><p>Catálogo</p><h2>Categorías</h2></div><button onClick={() => setActiveSection("categorias")} type="button">Entrar</button></div>
-                <div className="admin-category-list">
-                  {productsByCategory.map((group) => (
-                    <div key={group.category}><strong>{group.category}</strong><span>{group.total} productos</span><small>Editable</small></div>
-                  ))}
-                </div>
-              </article>
-            </section>
-
-            <section className="admin-dashboard-charts">
-              <article className="admin-panel admin-chart-panel">
-                <div className="admin-panel-heading"><div><p>Visibilidad</p><h2>Estado del catálogo</h2></div></div>
-                <div className="admin-meter-grid">
-                  <div>
-                    <span>Productos visibles</span>
-                    <strong>{visibleCount}/{products.length}</strong>
-                    <div className="admin-meter"><i style={{ width: `${Math.round((visibleCount / Math.max(products.length, 1)) * 100)}%` }} /></div>
-                  </div>
-                  <div>
-                    <span>Con precio definido</span>
-                    <strong>{pricedProducts.length}/{products.length}</strong>
-                    <div className="admin-meter admin-meter-alt"><i style={{ width: `${Math.round((pricedProducts.length / Math.max(products.length, 1)) * 100)}%` }} /></div>
-                  </div>
-                </div>
-              </article>
-
-              <article className="admin-panel admin-chart-panel">
-                <div className="admin-panel-heading"><div><p>Categorías</p><h2>Productos por categoría</h2></div></div>
-                <div className="admin-bar-chart">
-                  {productsByCategory.map((group) => (
-                    <div key={group.category}>
-                      <span>{group.category}</span>
-                      <div><i style={{ width: `${Math.round((group.total / maxCategoryTotal) * 100)}%` }} /></div>
-                      <strong>{group.total}</strong>
-                    </div>
-                  ))}
-                </div>
-              </article>
-
-              <article className="admin-panel admin-chart-panel">
-                <div className="admin-panel-heading"><div><p>Actividad</p><h2>Solicitudes recientes</h2></div></div>
-                <div className="admin-line-chart">
-                  {dashboardTrend.map((item) => (
-                    <div key={item.label} style={{ height: `${Math.max(18, Math.round((item.value / maxTrend) * 100))}%` }}>
-                      <i />
-                      <span>{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            </section>
-          </>
-        )}
-
-        {activeSection === "productos" && (
-          <section className="admin-grid admin-products-layout">
-            <article className="admin-panel admin-products-list">
-              <div className="admin-panel-heading">
-                <div><p>Productos</p><h2>Listado de productos</h2></div>
-                <span className="admin-panel-count">{products.length} productos</span>
-              </div>
-              <div className="admin-table">
-                {products.map((product) => (
-                  <button className={selectedProductId === product.id ? "admin-row admin-row-button admin-row-selected" : "admin-row admin-row-button"} key={product.id} onClick={() => openProduct(product)} type="button">
-                    <ProductThumb product={product} />
-                    <div><strong>{product.name}</strong><small>{product.categories.join(", ")} / {product.code}</small></div>
-                    <b>{product.price > 0 ? money.format(product.price) : "Consultar"}</b>
-                    <em>{product.visible ? "Visible" : "Oculto"}</em>
-                  </button>
-                ))}
-              </div>
-            </article>
-
-            <ProductEditor
-              authedFetch={authedFetch}
-              brands={brands}
-              canWrite={Boolean(token)}
-              categories={categories}
-              product={draftProduct}
-              setNotice={setNotice}
-              setProduct={setDraftProduct}
-              onSave={saveProduct}
-              title={selectedProduct ? `Ficha: ${selectedProduct.name}` : "Ficha de producto"}
-            />
-          </section>
-        )}
-
-        {activeSection === "categorias" && (
-          <ManageListPanel
-            intro="Crea, edita o elimina categorías visibles en el catálogo."
-            items={categories}
-            label="Categoría"
-            newValue={newCategory}
-            onAdd={addCategory}
-            onChange={setNewCategory}
-            onRemove={removeCategory}
-            title="Categorías"
-          />
-        )}
-
-        {activeSection === "marcas" && (
-          <ManageListPanel
-            intro="Administra las marcas que luego se asignan en la ficha del producto."
-            items={brands}
-            label="Marca"
-            newValue={newBrand}
-            onAdd={addBrand}
-            onChange={setNewBrand}
-            onRemove={removeBrand}
-            title="Marcas"
-          />
-        )}
-
-        {activeSection === "cotizaciones" && <OrdersPanel authedFetch={authedFetch} canWrite={Boolean(token)} />}
-
-        {activeSection === "contactos" && (
-          <section className="admin-grid admin-request-layout">
-            <article className="admin-panel">
-              <div className="admin-panel-heading"><div><p>Solicitudes</p><h2>Contactos</h2></div></div>
-              <div className="admin-request-list">
-                {requests.filter((request) => request.type === "Contacto").map((request) => (
-                  <button className={selectedRequest.name === request.name ? "admin-request-card admin-request-selected" : "admin-request-card"} key={`${request.name}-${request.type}`} onClick={() => setSelectedRequest(request)} type="button">
-                    <span>{request.type}</span><strong>{request.name}</strong><p>{request.detail}</p><em>{request.status}</em>
-                  </button>
-                ))}
-              </div>
-            </article>
-
-            <article className="admin-panel">
-              <div className="admin-panel-heading"><div><p>Detalle interno</p><h2>{selectedRequest.type}</h2></div><button type="button">Cambiar estado</button></div>
-              <div className="admin-detail-card">
-                <div><span>Nombre</span><strong>{selectedRequest.name}</strong></div>
-                <div><span>Correo</span><strong>{selectedRequest.email}</strong></div>
-                <div><span>Teléfono</span><strong>{selectedRequest.phone}</strong></div>
-                <div><span>Dirección</span><strong>{selectedRequest.address}</strong></div>
-                <div className="admin-detail-full"><span>Detalle de lo cotizado</span><p>{selectedRequest.detail}</p></div>
-              </div>
-            </article>
-          </section>
-        )}
-
-        {(activeSection === "banners" || activeSection === "paginas" || activeSection === "preguntas-frecuentes") && (
-          <ContentPanel activeSection={activeSection} content={siteContent} onSave={saveSiteContent} />
-        )}
-
-        {activeSection === "medios" && <MediaPanel authedFetch={authedFetch} canWrite={Boolean(token)} setNotice={setNotice} />}
-
-        {activeSection === "reportes" && <SimplePanel title="Reportes" intro="Resumen de ventas, solicitudes y productos visibles. La conexión a métricas reales queda pendiente." items={["Productos visibles", "Solicitudes abiertas", "Cotizaciones pendientes"]} />}
-        {activeSection === "administradores" && <UsersPanel admins={admins} setAdmins={setAdmins} />}
-        {activeSection === "roles-y-permisos" && <SimplePanel title="Roles y permisos" intro="Define permisos para productos, contenido, reportes y solicitudes." items={["Administrador: catálogo, contenido, usuarios y configuración", "Editor: productos, categorías, marcas, banners y páginas", "Vendedor: contactos, cotizaciones y reportes"]} />}
-        {activeSection === "datos-del-sitio" && <SimplePanel title="Datos del sitio" intro="Edita datos generales: nombre, correo, teléfono, WhatsApp, dirección y horario." items={["Lanería El Siglo", "Despacho a todo Chile", "Horario pendiente"]} />}
-        {activeSection === "seo" && <SimplePanel title="SEO" intro="Edita título, descripción, imagen social y palabras clave por página." items={["Título principal", "Descripción del catálogo", "Imagen OG"]} />}
-      </section>
-    </main>
+      {selected && (
+        <ProductEditor
+          categories={categories}
+          canWrite={canWrite}
+          key={selected.id}
+          product={selected}
+          session={session}
+          setNotice={setNotice}
+          onSaved={() => refresh()}
+        />
+      )}
+    </section>
   );
 }
 
@@ -696,9 +563,9 @@ function ProductThumb({ product }: { product: AdminProduct }) {
     <span
       className="admin-thumb"
       style={{
-        backgroundImage: `url("${product.imageSource}")`,
-        backgroundPosition: product.imagePosition,
-        backgroundSize: product.imageSize,
+        backgroundImage: product.imageSource ? `url("${product.imageSource}")` : undefined,
+        backgroundPosition: product.imagePosition ?? "center",
+        backgroundSize: product.imageSize ?? "cover",
       }}
     />
   );
@@ -713,36 +580,27 @@ type Variant = {
   sort_order: number;
 };
 
-/**
- * A que escribe el selector de imagenes: la foto principal, un color concreto
- * o una tanda de colores nuevos (seleccion multiple).
- */
 type ImageTarget =
   | { kind: "product" }
   | { kind: "variant"; id: number; code: string }
   | { kind: "bulk" };
 
 function ProductEditor({
-  authedFetch,
-  brands,
-  canWrite,
   categories,
-  onSave,
+  canWrite,
   product,
+  session,
   setNotice,
-  setProduct,
-  title,
+  onSaved,
 }: {
-  authedFetch: (url: string, init: RequestInit) => Promise<Response>;
-  brands: string[];
-  canWrite: boolean;
   categories: string[];
-  onSave: () => void;
+  canWrite: boolean;
   product: AdminProduct;
+  session: { token: string } | null;
   setNotice: (message: string) => void;
-  setProduct: (product: AdminProduct) => void;
-  title: string;
+  onSaved: () => void;
 }) {
+  const [draft, setDraft] = useState<AdminProduct>(product);
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
   const [mediaList, setMediaList] = useState<Array<{ id: number; filename: string; url: string }>>([]);
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -751,13 +609,16 @@ function ProductEditor({
   const [uploading, setUploading] = useState(false);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [variantsBusy, setVariantsBusy] = useState(false);
-  // Fotos marcadas en el modo "agregar varias".
   const [picked, setPicked] = useState<string[]>([]);
+  const [bulkDrafts, setBulkDrafts] = useState<Record<string, { code: string; color_name: string }>>({});
+  const [saving, setSaving] = useState(false);
 
-  // Las variantes viven en su propia tabla, asi que se recargan al cambiar de ficha.
+  async function sessionFetchGen(url: string, init: RequestInit) {
+    return sessionFetch(session, url, init);
+  }
+
   useEffect(() => {
     let cancelled = false;
-
     async function loadVariants() {
       try {
         const response = await fetch(`/api/admin/variants?product_id=${product.id}`);
@@ -768,7 +629,6 @@ function ProductEditor({
         if (!cancelled) setVariants([]);
       }
     }
-
     loadVariants();
     return () => {
       cancelled = true;
@@ -778,44 +638,75 @@ function ProductEditor({
   useEffect(() => {
     if (!imageTarget) return;
     let cancelled = false;
-
     async function loadMedia() {
       try {
         setMediaLoading(true);
         const response = await fetch("/api/admin/media");
-        const { media } = (await response.json()) as { media: { id: number; filename: string; url: string }[] };
+        const { media } = (await response.json()) as {
+          media: { id: number; filename: string; url: string }[];
+        };
         if (!cancelled) setMediaList(media ?? []);
       } finally {
         if (!cancelled) setMediaLoading(false);
       }
     }
-
     loadMedia();
     return () => {
       cancelled = true;
     };
   }, [imageTarget]);
 
-  const declaredCodes = product.allColors.split(",").map((code) => code.trim()).filter(Boolean);
+  async function saveProduct() {
+    if (!canWrite) return;
+    setSaving(true);
+    try {
+      await sessionFetchGen("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: draft.id,
+          name: draft.name,
+          category: draft.category,
+          price: draft.price,
+          description: draft.description,
+          visible: draft.visible,
+          image_source: draft.imageSource,
+        }),
+      });
+      setNotice(`"${draft.name}" guardado. Ya está actualizado en la tienda.`);
+      onSaved();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo guardar el producto.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  /** Crea una variante por cada codigo del campo "Colores / codigos". */
+  const declaredCodes = (draft.allColors ?? "")
+    .split(",")
+    .map((code) => code.trim())
+    .filter(Boolean);
+  const availableCodes = declaredCodes.filter((code) => !variants.some((variant) => variant.code === code));
+
+  function suggestedBulkCode(index: number) {
+    return availableCodes[index] ?? "";
+  }
+
   async function seedVariants() {
-    const codes = declaredCodes;
-    if (!codes.length) {
-      setNotice("Escribe los códigos en \"Colores / códigos\" antes de generarlos.");
+    if (!declaredCodes.length) {
+      setNotice('Escribe los códigos en "Colores / códigos" antes de generarlos.');
       return;
     }
-
     setVariantsBusy(true);
     try {
-      const response = await authedFetch("/api/admin/variants", {
+      const { body } = await sessionFetchGen("/api/admin/variants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product_id: product.id, codes }),
+        body: JSON.stringify({ product_id: product.id, codes: declaredCodes }),
       });
-      const { variants: rows } = (await response.json()) as { variants: Variant[] };
-      setVariants(rows ?? []);
-      setNotice(`${rows.length} código(s) disponibles para ${product.name}.`);
+      const next = (body as { variants: Variant[] }).variants ?? [];
+      setVariants(next);
+      setNotice(`${next.length} código(s) disponibles para ${draft.name}.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "No se pudieron generar los códigos.");
     } finally {
@@ -823,11 +714,13 @@ function ProductEditor({
     }
   }
 
-  /** Guarda un campo de la variante. Se persiste al vuelo, sin "Guardar cambios". */
-  async function patchVariant(id: number, patch: Partial<Pick<Variant, "code" | "color_name" | "image_source">>) {
+  async function patchVariant(
+    id: number,
+    patch: Partial<Pick<Variant, "code" | "color_name" | "image_source">>
+  ) {
     setVariants((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     try {
-      await authedFetch("/api/admin/variants", {
+      await sessionFetchGen("/api/admin/variants", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, ...patch }),
@@ -841,31 +734,40 @@ function ProductEditor({
     if (!window.confirm(`¿Eliminar el código "${variant.code}"?`)) return;
     setVariants((current) => current.filter((item) => item.id !== variant.id));
     try {
-      await authedFetch(`/api/admin/variants?id=${variant.id}`, { method: "DELETE" });
+      await sessionFetchGen(`/api/admin/variants?id=${variant.id}`, { method: "DELETE" });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "No se pudo eliminar el código.");
     }
   }
 
-  /** Agrega de una vez todas las fotos marcadas como colores del producto. */
   async function addPickedImages() {
     if (!picked.length) return;
-
+    const nextVariants = picked.map((url, index) => {
+      const d = bulkDrafts[url] ?? { code: suggestedBulkCode(index), color_name: "" };
+      return {
+        code: d.code.trim(),
+        color_name: d.color_name.trim(),
+        image_source: url,
+      };
+    });
     setVariantsBusy(true);
     try {
-      const response = await authedFetch("/api/admin/variants", {
+      const { body } = await sessionFetchGen("/api/admin/variants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           product_id: product.id,
-          images: picked,
+          variants: nextVariants,
           available_codes: declaredCodes,
         }),
       });
-      const { variants: rows } = (await response.json()) as { variants: Variant[] };
-      setVariants(rows ?? []);
-      setNotice(`${picked.length} foto(s) agregadas a ${product.name}. Ajusta el código y el nombre de cada color.`);
+      const next = (body as { variants: Variant[] }).variants ?? [];
+      setVariants(next);
+      setNotice(
+        `${picked.length} foto(s) agregadas a ${draft.name}. Ajusta el código y el nombre de cada color.`
+      );
       setPicked([]);
+      setBulkDrafts({});
       setImageTarget(null);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "No se pudieron agregar las fotos.");
@@ -874,51 +776,62 @@ function ProductEditor({
     }
   }
 
-  /** Aplica la imagen elegida al destino que abrio el selector. */
   function applyImage(url: string) {
     if (!imageTarget) return;
-
     if (imageTarget.kind === "bulk") {
-      setPicked((current) =>
-        current.includes(url) ? current.filter((item) => item !== url) : [...current, url]
-      );
+      setPicked((current) => {
+        if (current.includes(url)) return current.filter((item) => item !== url);
+        const nextIndex = current.length;
+        setBulkDrafts((drafts) => ({
+          ...drafts,
+          [url]: drafts[url] ?? { code: suggestedBulkCode(nextIndex), color_name: "" },
+        }));
+        return [...current, url];
+      });
       return;
     }
-
     if (imageTarget.kind === "product") {
-      setProduct({ ...product, imageSource: url });
-      setNotice("Imagen principal actualizada. Pulsa \"Guardar cambios\" para publicarla.");
+      setDraft({ ...draft, imageSource: url });
+      setNotice('Imagen principal actualizada. Pulsa "Guardar cambios" para publicarla.');
     } else {
       patchVariant(imageTarget.id, { image_source: url });
       setNotice(`Imagen asignada al código ${imageTarget.code}.`);
     }
-
     setImageTarget(null);
   }
 
   async function uploadAndApply(files: FileList | null) {
     if (!files?.length) return;
-
     setUploading(true);
     try {
       const form = new FormData();
       Array.from(files).forEach((file) => form.append("files", file));
-      const response = await authedFetch("/api/admin/media", { method: "POST", body: form });
-      const { uploaded } = (await response.json()) as { uploaded: { url: string }[] };
-
-      if (!uploaded?.length) {
+      const { body } = await sessionFetchGen("/api/admin/media", { method: "POST", body: form });
+      const uploaded = (body as { uploaded: { url: string }[] }).uploaded ?? [];
+      if (!uploaded.length) {
         setNotice("No se subió ninguna imagen.");
         return;
       }
-
-      // En modo "agregar varias" se marcan todas las recién subidas.
       if (imageTarget?.kind === "bulk") {
-        setPicked((current) => [...current, ...uploaded.map((item) => item.url)]);
+        const uploadedUrls = uploaded.map((item) => item.url);
+        setPicked((current) => {
+          const fresh = uploadedUrls.filter((url) => !current.includes(url));
+          setBulkDrafts((drafts) => {
+            const next = { ...drafts };
+            fresh.forEach((url, index) => {
+              next[url] = next[url] ?? {
+                code: suggestedBulkCode(current.length + index),
+                color_name: "",
+              };
+            });
+            return next;
+          });
+          return [...current, ...fresh];
+        });
         setModalTab("medios");
         setNotice(`${uploaded.length} foto(s) subidas y marcadas.`);
         return;
       }
-
       applyImage(uploaded[0].url);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "No se pudo subir la imagen.");
@@ -934,63 +847,161 @@ function ProductEditor({
   return (
     <>
       <div className="admin-editor-column">
-      <article className="admin-panel admin-editor">
-        <div className="admin-panel-heading"><div><p>Ficha editable</p><h2>{title}</h2></div><button onClick={onSave} type="button">Guardar cambios</button></div>
-        <div className="admin-editor-content">
-          <div className="admin-editor-image">
-            <div className="admin-image-display">
-              {product.imageSource ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img alt={product.name} src={product.imageSource} />
-              ) : (
-                <div className="admin-image-empty">Sin imagen</div>
+        <article className="admin-panel admin-editor">
+          <div className="admin-panel-heading">
+            <div>
+              <p>Ficha editable</p>
+              <h2>{draft.name || "Ficha de producto"}</h2>
+            </div>
+            {canWrite && (
+              <button disabled={saving} onClick={saveProduct} type="button">
+                {saving ? "Guardando…" : "Guardar cambios"}
+              </button>
+            )}
+          </div>
+          <div className="admin-editor-content">
+            <div className="admin-editor-image">
+              <div className="admin-main-image-card">
+                <div className="admin-main-image-heading">
+                  <span>Imagen principal actual</span>
+                  <strong>{draft.name || "Producto"}</strong>
+                </div>
+                <div className="admin-image-display admin-main-image-display">
+                  {draft.imageSource ? (
+                    <>
+                      <span className="admin-main-image-badge">Principal</span>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img alt={draft.name} src={draft.imageSource} />
+                    </>
+                  ) : (
+                    <div className="admin-image-empty">Sin imagen principal</div>
+                  )}
+                </div>
+                <p className="admin-main-image-help">
+                  Esta es la imagen que aparece primero en la tarjeta del catálogo.
+                </p>
+                {canWrite && (
+                  <button
+                    className="admin-image-picker-btn-large"
+                    onClick={() => setImageTarget({ kind: "product" })}
+                    type="button"
+                  >
+                    {draft.imageSource ? "Cambiar imagen principal" : "Seleccionar imagen principal"}
+                  </button>
+                )}
+              </div>
+
+              {variants.some((variant) => variant.image_source) && (
+                <div className="admin-main-image-thumbs">
+                  <span>Miniaturas de colores</span>
+                  <div>
+                    {variants
+                      .filter((variant) => variant.image_source)
+                      .map((variant) => (
+                        <button
+                          className={
+                            variant.image_source === draft.imageSource
+                              ? "admin-main-thumb admin-main-thumb-active"
+                              : "admin-main-thumb"
+                          }
+                          disabled={!canWrite}
+                          key={variant.id}
+                          onClick={() => setDraft({ ...draft, imageSource: variant.image_source })}
+                          title={variant.color_name || variant.code}
+                          type="button"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img alt={variant.color_name || variant.code} src={variant.image_source} />
+                        </button>
+                      ))}
+                  </div>
+                </div>
               )}
             </div>
-            <button type="button" onClick={() => setImageTarget({ kind: "product" })} className="admin-image-picker-btn-large">
-              {product.imageSource ? "Cambiar imagen" : "Seleccionar imagen"}
-            </button>
-          </div>
-          <div className="admin-editor-form">
-            <div className="admin-form-row">
-              <label><span>Nombre del producto</span><input value={product.name} onChange={(event) => setProduct({ ...product, name: event.target.value })} /></label>
-              <label><span>Código</span><input value={product.code} onChange={(event) => setProduct({ ...product, code: event.target.value })} /></label>
-            </div>
-            <div className="admin-form-row">
-              <label><span>Precio</span><input min="0" type="number" value={product.price} onChange={(event) => setProduct({ ...product, price: Number(event.target.value) })} /></label>
-              <label><span>Precio docena</span><input value={product.dozenPrice} onChange={(event) => setProduct({ ...product, dozenPrice: event.target.value })} /></label>
-            </div>
-            <div className="admin-form-full">
-              <span className="admin-field-label">Categorías</span>
-              <div className="admin-checkbox-grid">
-                {categories.map((category) => {
-                  const checked = product.categories.includes(category);
-                  return (
-                    <label key={category}>
-                      <input checked={checked} type="checkbox" onChange={(event) => {
-                        const nextCategories = event.target.checked ? [...product.categories, category] : product.categories.filter((item) => item !== category);
-                        setProduct({ ...product, categories: nextCategories, category: nextCategories[0] || product.category });
-                      }} />
-                      <span>{category}</span>
-                    </label>
-                  );
-                })}
+            <div className="admin-editor-form">
+              <div className="admin-form-row">
+                <label>
+                  <span>Nombre del producto</span>
+                  <input
+                    value={draft.name}
+                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Categoría</span>
+                  <select
+                    value={draft.category}
+                    onChange={(event) => setDraft({ ...draft, category: event.target.value })}
+                  >
+                    {categories.map((category) => (
+                      <option key={category}>{category}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
+              <div className="admin-form-row">
+                <label>
+                  <span>Precio</span>
+                  <input
+                    min="0"
+                    type="number"
+                    value={draft.price}
+                    onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  <span>Precio docena</span>
+                  <input
+                    value={draft.dozenPrice}
+                    onChange={(event) => setDraft({ ...draft, dozenPrice: event.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="admin-form-row">
+                <label>
+                  <span>Composición</span>
+                  <input
+                    value={draft.fiber}
+                    onChange={(event) => setDraft({ ...draft, fiber: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Gramaje</span>
+                  <input
+                    value={draft.weight}
+                    onChange={(event) => setDraft({ ...draft, weight: event.target.value })}
+                  />
+                </label>
+              </div>
+              <label className="admin-form-full">
+                <span>Colores / códigos</span>
+                <input
+                  value={draft.allColors}
+                  onChange={(event) => setDraft({ ...draft, allColors: event.target.value })}
+                />
+              </label>
+              <label className="admin-form-full">
+                <span>Descripción</span>
+                <textarea
+                  value={draft.description}
+                  onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                />
+              </label>
+              {canWrite && (
+                <label className="admin-switch">
+                  <input
+                    checked={draft.visible}
+                    type="checkbox"
+                    onChange={(event) => setDraft({ ...draft, visible: event.target.checked })}
+                  />
+                  <span>Visible en la tienda</span>
+                </label>
+              )}
             </div>
-            <div className="admin-form-row">
-              <label><span>Marca</span><select value={product.brand} onChange={(event) => setProduct({ ...product, brand: event.target.value })}>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>
-            </div>
-            <div className="admin-form-row">
-              <label><span>Composición</span><input value={product.fiber} onChange={(event) => setProduct({ ...product, fiber: event.target.value })} /></label>
-              <label><span>Gramaje</span><input value={product.weight} onChange={(event) => setProduct({ ...product, weight: event.target.value })} /></label>
-            </div>
-            <label className="admin-form-full"><span>Colores / códigos</span><input value={product.allColors} onChange={(event) => setProduct({ ...product, allColors: event.target.value })} /></label>
-            <label className="admin-form-full"><span>Descripción</span><textarea value={product.description} onChange={(event) => setProduct({ ...product, description: event.target.value })} /></label>
-            <label className="admin-switch"><input checked={product.visible} type="checkbox" onChange={(event) => setProduct({ ...product, visible: event.target.checked })} /><span>Visible en la tienda</span></label>
           </div>
-        </div>
-      </article>
+        </article>
 
-      <section className="admin-panel admin-variants">
+        <section className="admin-panel admin-variants">
           <div className="admin-variants-heading">
             <div>
               <span className="admin-field-label">Más fotos de este producto</span>
@@ -1000,41 +1011,44 @@ function ProductEditor({
                 sin pasar por &quot;Guardar cambios&quot;.
               </p>
             </div>
-            <div className="admin-variants-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setPicked([]);
-                  setModalTab("medios");
-                  setImageTarget({ kind: "bulk" });
-                }}
-                disabled={!canWrite || variantsBusy}
-              >
-                Agregar fotos
-              </button>
-              <button
-                className="admin-variants-secondary"
-                type="button"
-                onClick={seedVariants}
-                disabled={!canWrite || variantsBusy}
-              >
-                {variantsBusy ? "Trabajando…" : "Generar desde códigos"}
-              </button>
-            </div>
+            {canWrite && (
+              <div className="admin-variants-actions">
+                <button
+                  disabled={variantsBusy}
+                  onClick={() => {
+                    setPicked([]);
+                    setBulkDrafts({});
+                    setModalTab("medios");
+                    setImageTarget({ kind: "bulk" });
+                  }}
+                  type="button"
+                >
+                  Agregar fotos
+                </button>
+                <button
+                  className="admin-variants-secondary"
+                  disabled={variantsBusy}
+                  onClick={seedVariants}
+                  type="button"
+                >
+                  {variantsBusy ? "Trabajando…" : "Generar desde códigos"}
+                </button>
+              </div>
+            )}
           </div>
 
           {!canWrite && (
             <p className="admin-variants-locked">
-              Ingresa la contraseña del panel (arriba, en <strong>Modo lectura</strong>) para editar los colores.
+              Tu rol es de solo lectura: no puedes editar los colores de un producto.
             </p>
           )}
 
           {variants.length === 0 ? (
             <p className="admin-variants-empty">
-              Todavía no hay colores. <strong>Agregar fotos</strong> te deja marcar varias imágenes
-              de la biblioteca y crea un color por cada una. <strong>Generar desde códigos</strong>
-              crea uno por cada valor del campo <em>Colores / códigos</em>, para que luego les
-              asignes la foto.
+              Todavía no hay colores. <strong>Agregar fotos</strong> te deja marcar varias
+              imágenes de la biblioteca y crea un color por cada una.{" "}
+              <strong>Generar desde códigos</strong> crea uno por cada valor del campo{" "}
+              <em>Colores / códigos</em>.
             </p>
           ) : (
             <div className="admin-variant-grid">
@@ -1048,15 +1062,15 @@ function ProductEditor({
                   <button
                     className="admin-variant-image"
                     disabled={!canWrite}
-                    type="button"
                     onClick={() => {
                       setModalTab("medios");
                       setImageTarget({ kind: "variant", id: variant.id, code: variant.code });
                     }}
-                    title={canWrite ? "Elegir imagen para este código" : "Inicia sesión para cambiar la foto"}
+                    title={canWrite ? "Elegir imagen para este código" : "Solo lectura"}
+                    type="button"
                   >
                     {variant.image_source ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img alt={variant.code} src={variant.image_source} />
                     ) : (
                       <span>Sin foto</span>
@@ -1065,31 +1079,43 @@ function ProductEditor({
                   <input
                     aria-label={`Código ${variant.code}`}
                     className="admin-variant-code"
+                    disabled={!canWrite}
                     list={`codigos-${product.id}`}
                     defaultValue={variant.code}
                     onBlur={(event) => {
                       const next = event.target.value.trim();
-                      if (next && next !== variant.code) patchVariant(variant.id, { code: next });
+                      if (canWrite && next && next !== variant.code) {
+                        patchVariant(variant.id, { code: next });
+                      }
                     }}
                   />
                   <input
                     aria-label={`Nombre del color ${variant.code}`}
                     className="admin-variant-color"
                     defaultValue={variant.color_name}
+                    disabled={!canWrite}
                     placeholder="Nombre del color"
                     onBlur={(event) => {
                       const next = event.target.value.trim();
-                      if (next !== variant.color_name) patchVariant(variant.id, { color_name: next });
+                      if (canWrite && next !== variant.color_name) {
+                        patchVariant(variant.id, { color_name: next });
+                      }
                     }}
                   />
-                  <button className="admin-variant-remove" type="button" onClick={() => removeVariant(variant)}>
-                    Eliminar
-                  </button>
+                  {canWrite && (
+                    <button
+                      className="admin-variant-remove"
+                      onClick={() => removeVariant(variant)}
+                      type="button"
+                    >
+                      Eliminar
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
           )}
-      </section>
+        </section>
       </div>
 
       {imageTarget && (
@@ -1098,12 +1124,19 @@ function ProductEditor({
             <div className="admin-modal-header">
               <h2>
                 {imageTarget.kind === "product"
-                  ? `Imagen principal de ${product.name}`
+                  ? `Imagen principal de ${draft.name}`
                   : imageTarget.kind === "bulk"
-                    ? `Agregar colores a ${product.name}`
+                    ? `Agregar colores a ${draft.name}`
                     : `Imagen del código ${imageTarget.code}`}
               </h2>
-              <button className="admin-modal-close" onClick={() => setImageTarget(null)} aria-label="Cerrar">×</button>
+              <button
+                aria-label="Cerrar"
+                className="admin-modal-close"
+                onClick={() => setImageTarget(null)}
+                type="button"
+              >
+                ×
+              </button>
             </div>
 
             <div className="admin-modal-body-large">
@@ -1153,8 +1186,8 @@ function ProductEditor({
                   />
                   {imageTarget.kind === "bulk" && (
                     <p className="admin-modal-hint">
-                      Marca todas las fotos que quieras. Cada una se convierte en un color del
-                      producto; después les pones el código y el nombre.
+                      Marca las fotos y revisa abajo el código y nombre de color antes de
+                      agregarlas.
                     </p>
                   )}
                   <div className="admin-media-grid-modal">
@@ -1163,7 +1196,9 @@ function ProductEditor({
                       return (
                         <button
                           aria-pressed={imageTarget.kind === "bulk" ? marked : undefined}
-                          className={marked ? "admin-media-card-modal admin-media-card-picked" : "admin-media-card-modal"}
+                          className={
+                            marked ? "admin-media-card-modal admin-media-card-picked" : "admin-media-card-modal"
+                          }
                           key={media.id}
                           onClick={() => applyImage(media.url)}
                           type="button"
@@ -1179,11 +1214,52 @@ function ProductEditor({
               )}
 
               {imageTarget.kind === "bulk" && (
-                <div className="admin-modal-footer">
-                  <span>{picked.length} foto(s) marcadas</span>
-                  <button disabled={!picked.length || variantsBusy} onClick={addPickedImages} type="button">
-                    {variantsBusy ? "Agregando…" : `Agregar ${picked.length || ""} color(es)`}
-                  </button>
+                <div className="admin-bulk-review">
+                  {picked.length > 0 && (
+                    <div className="admin-bulk-list">
+                      {picked.map((url, index) => {
+                        const d = bulkDrafts[url] ?? { code: suggestedBulkCode(index), color_name: "" };
+                        const media = mediaList.find((item) => item.url === url);
+                        return (
+                          <div className="admin-bulk-row" key={url}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img alt={media?.filename ?? `Color ${index + 1}`} src={url} />
+                            <label>
+                              <span>Código</span>
+                              <input
+                                list={`codigos-${product.id}`}
+                                onChange={(event) =>
+                                  updateBulkDraft(url, { code: event.target.value })
+                                }
+                                placeholder={suggestedBulkCode(index) || "Código"}
+                                value={d.code}
+                              />
+                            </label>
+                            <label>
+                              <span>Color</span>
+                              <input
+                                onChange={(event) =>
+                                  updateBulkDraft(url, { color_name: event.target.value })
+                                }
+                                placeholder="Nombre del color"
+                                value={d.color_name}
+                              />
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="admin-modal-footer">
+                    <span>{picked.length} foto(s) marcadas</span>
+                    <button
+                      disabled={!picked.length || variantsBusy}
+                      onClick={addPickedImages}
+                      type="button"
+                    >
+                      {variantsBusy ? "Agregando…" : `Agregar ${picked.length || ""} color(es)`}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1192,43 +1268,133 @@ function ProductEditor({
       )}
     </>
   );
+
+  function updateBulkDraft(url: string, patch: Partial<{ code: string; color_name: string }>) {
+    setBulkDrafts((current) => ({
+      ...current,
+      [url]: { ...(current[url] ?? { code: "", color_name: "" }), ...patch },
+    }));
+  }
 }
 
-function ManageListPanel({
-  intro,
-  items,
-  label,
-  newValue,
-  onAdd,
-  onChange,
-  onRemove,
-  title,
+function CategoriesPanel({
+  canWrite,
+  session,
+  setNotice,
 }: {
-  intro: string;
-  items: string[];
-  label: string;
-  newValue: string;
-  onAdd: () => void;
-  onChange: (value: string) => void;
-  onRemove: (value: string) => void;
-  title: string;
+  canWrite: boolean;
+  session: { token: string } | null;
+  setNotice: (message: string) => void;
 }) {
+  const [list, setList] = useState<{ category: string; total: number }[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  async function refresh() {
+    try {
+      const response = await fetch("/api/admin/categories");
+      const { categories } = (await response.json()) as {
+        categories: { category: string; total: number }[];
+      };
+      setList(categories ?? []);
+    } catch {
+      setNotice("No se pudieron cargar las categorías.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <section className="admin-panel">
-      <div className="admin-panel-heading"><div><p>Catálogo</p><h2>{title}</h2></div></div>
-      <p className="admin-panel-intro">{intro}</p>
-      <div className="admin-inline-form">
-        <label><span>Nueva {label.toLowerCase()}</span><input value={newValue} onChange={(event) => onChange(event.target.value)} placeholder={`Nueva ${label.toLowerCase()}`} /></label>
-        <button onClick={onAdd} type="button">Agregar</button>
+      <div className="admin-panel-heading">
+        <div>
+          <p>Catálogo</p>
+          <h2>Categorías</h2>
+        </div>
+        <span className="admin-panel-count">{list.length} categoría(s)</span>
       </div>
-      <div className="admin-edit-list">
-        {items.map((item) => (
-          <div key={item}><input defaultValue={item} aria-label={`Editar ${item}`} /><button onClick={() => onRemove(item)} type="button">Eliminar</button></div>
-        ))}
-      </div>
+      <p className="admin-panel-intro">
+        Las categorías se toman de los productos. Renombrar una categoría actualiza todos los
+        productos que la usan. Para crear una nueva, asigna el nombre desde la ficha de un
+        producto.
+      </p>
+      {loading ? (
+        <p className="admin-media-empty">Cargando categorías…</p>
+      ) : list.length === 0 ? (
+        <p className="admin-media-empty">Todavía no hay categorías.</p>
+      ) : (
+        <div className="admin-edit-list">
+          {list.map((group) => (
+            <CategoryRow
+              canWrite={canWrite}
+              group={group}
+              key={group.category}
+              onRenamed={() => {
+                setNotice(`"${group.category}" renombrada.`);
+                refresh();
+              }}
+              session={session}
+            />
+          ))}
+        </div>
+      )}
     </section>
+  );
+}
+
+function CategoryRow({
+  canWrite,
+  group,
+  onRenamed,
+  session,
+}: {
+  canWrite: boolean;
+  group: { category: string; total: number };
+  onRenamed: () => void;
+  session: { token: string } | null;
+}) {
+  const [value, setValue] = useState(group.category);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => setValue(group.category), [group.category]);
+
+  async function rename() {
+    const to = value.trim();
+    if (!to || to === group.category) return;
+    setBusy(true);
+    try {
+      await sessionFetch(session, "/api/admin/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: group.category, to }),
+      });
+      onRenamed();
+    } catch {
+      // sessionFetch lanza el error; el padre refresca y muestra el resultado real si hubo cambios.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="admin-category-row" key={group.category}>
+      <input
+        aria-label={`Renombrar categoría ${group.category}`}
+        disabled={!canWrite}
+        onChange={(event) => setValue(event.target.value)}
+        value={value}
+      />
+      <span className="admin-category-total">{group.total} producto(s)</span>
+      {canWrite && (
+        <button disabled={busy || value.trim() === group.category} onClick={rename} type="button">
+          {busy ? "Guardando…" : "Renombrar"}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1247,26 +1413,25 @@ type OrderRow = {
 };
 
 function OrdersPanel({
-  authedFetch,
   canWrite,
+  session,
 }: {
-  authedFetch: (url: string, init: RequestInit) => Promise<Response>;
   canWrite: boolean;
+  session: { token: string } | null;
 }) {
   const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "error">("loading");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     if (!canWrite) return;
     let cancelled = false;
-
     async function load() {
       try {
-        const response = await authedFetch("/api/orders", { method: "GET" });
-        const { orders: rows } = (await response.json()) as { orders: OrderRow[] };
+        const { body } = await sessionFetch(session, "/api/orders", { method: "GET" });
+        const rows = (body as { orders: OrderRow[] }).orders ?? [];
         if (!cancelled) {
-          setOrders(rows ?? []);
+          setOrders(rows);
           setState("idle");
         }
       } catch (error) {
@@ -1276,32 +1441,39 @@ function OrdersPanel({
         }
       }
     }
-
     load();
     return () => {
       cancelled = true;
     };
-  }, [authedFetch, canWrite]);
+  }, [canWrite, session]);
 
   if (!canWrite) {
     return (
       <section className="admin-panel">
-        <div className="admin-panel-heading"><div><p>Solicitudes</p><h2>Cotizaciones</h2></div></div>
-        <p className="admin-media-empty">Ingresa la contraseña del panel para ver las cotizaciones.</p>
+        <div className="admin-panel-heading">
+          <div>
+            <p>Solicitudes</p>
+            <h2>Cotizaciones</h2>
+          </div>
+        </div>
+        <p className="admin-media-empty">Tu rol no permite ver las cotizaciones.</p>
       </section>
     );
   }
 
-
-
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading">
-        <div><p>Solicitudes</p><h2>Cotizaciones</h2></div>
+        <div>
+          <p>Solicitudes</p>
+          <h2>Cotizaciones</h2>
+        </div>
         <span className="admin-panel-count">{orders.length} cotización(es)</span>
       </div>
 
-      {state === "error" ? (
+      {state === "loading" ? (
+        <p className="admin-media-empty">Cargando cotizaciones…</p>
+      ) : state === "error" ? (
         <p className="admin-media-empty">{message}</p>
       ) : orders.length === 0 ? (
         <p className="admin-media-empty">Todavía no hay cotizaciones.</p>
@@ -1316,12 +1488,34 @@ function OrdersPanel({
               </header>
               <p className="admin-order-detail">{order.detail ?? `${order.lines} línea(s)`}</p>
               <dl className="admin-order-meta">
-                <div><dt>Cliente</dt><dd>{order.user_name}</dd></div>
-                <div><dt>Correo</dt><dd>{order.user_email}</dd></div>
-                {order.user_phone && <div><dt>Teléfono</dt><dd>{order.user_phone}</dd></div>}
-                <div><dt>Despacho</dt><dd>{order.shipping_address}</dd></div>
-                <div><dt>Fecha</dt><dd>{order.created_at}</dd></div>
-                {order.notes && <div><dt>Comentarios</dt><dd>{order.notes}</dd></div>}
+                <div>
+                  <dt>Cliente</dt>
+                  <dd>{order.user_name || "Sin identificar"}</dd>
+                </div>
+                <div>
+                  <dt>Correo</dt>
+                  <dd>{order.user_email || "—"}</dd>
+                </div>
+                {order.user_phone && (
+                  <div>
+                    <dt>Teléfono</dt>
+                    <dd>{order.user_phone}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Despacho</dt>
+                  <dd>{order.shipping_address || "—"}</dd>
+                </div>
+                <div>
+                  <dt>Fecha</dt>
+                  <dd>{order.created_at}</dd>
+                </div>
+                {order.notes && (
+                  <div>
+                    <dt>Comentarios</dt>
+                    <dd>{order.notes}</dd>
+                  </div>
+                )}
               </dl>
             </article>
           ))}
@@ -1331,320 +1525,251 @@ function OrdersPanel({
   );
 }
 
-type MediaItem = {
+type UserRow = {
   id: number;
-  kv_key: string;
-  filename: string;
-  content_type: string;
-  size: number;
-  created_at: string;
-  url: string;
+  name: string;
+  email: string;
+  role: string;
+  active: number;
 };
 
-function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
-}
-
-function MediaPanel({
-  authedFetch,
-  canWrite,
+function UsersPanel({
+  session,
   setNotice,
 }: {
-  authedFetch: (url: string, init: RequestInit) => Promise<Response>;
-  canWrite: boolean;
+  session: { token: string } | null;
   setNotice: (message: string) => void;
 }) {
-  const [items, setItems] = useState<MediaItem[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dragging, setDragging] = useState(false);
-  const [search, setSearch] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [bootstrapAuth, setBootstrapAuth] = useState(false);
 
   async function refresh() {
     try {
-      const response = await fetch("/api/admin/media");
-      const { media } = (await response.json()) as { media: MediaItem[] };
-      setItems(media ?? []);
-    } catch {
-      setNotice("No se pudo cargar la biblioteca de medios.");
+      const { body } = await sessionFetch(session, "/api/admin/users", { method: "GET" });
+      setUsers((body as { users: UserRow[] }).users ?? []);
+      setBootstrapAuth(Boolean((body as { bootstrapAuth: boolean }).bootstrapAuth));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudieron cargar los usuarios.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const response = await fetch("/api/admin/media");
-        const { media } = (await response.json()) as { media: MediaItem[] };
-        if (!cancelled) setItems(media ?? []);
-      } catch {
-        if (!cancelled) setNotice("No se pudo cargar la biblioteca de medios.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [setNotice]);
-
-  async function upload(files: FileList | File[]) {
-    const list = Array.from(files);
-    if (!list.length) return;
-
-    if (!canWrite) {
-      setNotice("Ingresa la contraseña del panel para subir imágenes.");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const form = new FormData();
-      list.forEach((file) => form.append("files", file));
-
-      const response = await authedFetch("/api/admin/media", { method: "POST", body: form });
-      const result = (await response.json()) as {
-        uploaded: MediaItem[];
-        rejected: { filename: string; reason: string }[];
-      };
-
-      await refresh();
-
-      const parts: string[] = [];
-      if (result.uploaded.length) parts.push(`${result.uploaded.length} imagen(es) subida(s)`);
-      if (result.rejected.length) {
-        parts.push(result.rejected.map((item) => `${item.filename}: ${item.reason}`).join(" · "));
-      }
-      setNotice(parts.join(". "));
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudieron subir las imágenes.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(item: MediaItem) {
-    if (!canWrite) {
-      setNotice("Ingresa la contraseña del panel para eliminar imágenes.");
-      return;
-    }
-    if (!window.confirm(`¿Eliminar "${item.filename}"? Las fichas que la usen quedarán sin imagen.`)) return;
-
-    try {
-      await authedFetch(`/api/admin/media?key=${encodeURIComponent(item.kv_key)}`, { method: "DELETE" });
-      setItems((current) => current.filter((entry) => entry.kv_key !== item.kv_key));
-      setNotice(`"${item.filename}" eliminada.`);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "No se pudo eliminar la imagen.");
-    }
-  }
-
-  async function copyUrl(item: MediaItem) {
-    await navigator.clipboard.writeText(item.url);
-    setNotice(`Ruta copiada: ${item.url} — pégala en "Imagen" de la ficha de producto.`);
-  }
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading">
         <div>
-          <p>Contenido dinámico</p>
-          <h2>Medios</h2>
+          <p>Usuarios</p>
+          <h2>Accesos al panel</h2>
         </div>
-        <span className="admin-panel-count">{items.length} archivo(s)</span>
+        <button onClick={() => setShowForm((current) => !current)} type="button">
+          {showForm ? "Cancelar" : "Nuevo usuario"}
+        </button>
       </div>
-
-      <p className="admin-media-intro">
-        Sube varias imágenes a la vez. Formatos: JPG, PNG, WebP, GIF, AVIF y SVG, hasta 10 MB cada una.
-        Copia la ruta de una imagen y pégala en el campo &quot;Imagen&quot; de la ficha de producto.
+      <p className="admin-panel-intro">
+        Cada persona tiene su propia cuenta y contraseña para entrar al panel.
+        {bootstrapAuth
+          ? " Estás conectado/a con la contraseña maestra (ADMIN_TOKEN): crea cuentas por persona desde aquí."
+          : ""}
       </p>
 
-      {items.length > 0 && (
-        <input
-          type="text"
-          placeholder="Buscar por nombre (ej: 'Favori', 'IMG')"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="admin-media-search"
-          aria-label="Filtrar medios"
+      {showForm && (
+        <UserForm
+          onDone={() => {
+            setShowForm(false);
+            refresh();
+          }}
+          session={session}
+          setNotice={setNotice}
         />
       )}
-
-      <label
-        className={dragging ? "admin-dropzone admin-dropzone-active" : "admin-dropzone"}
-        onDragLeave={(event) => {
-          event.preventDefault();
-          setDragging(false);
-        }}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          upload(event.dataTransfer.files);
-        }}
-      >
-        <input
-          accept="image/*"
-          disabled={busy}
-          multiple
-          onChange={(event) => {
-            if (event.target.files) upload(event.target.files);
-            event.target.value = "";
-          }}
-          type="file"
-        />
-        <strong>{busy ? "Subiendo…" : "Arrastra imágenes aquí o haz clic para elegirlas"}</strong>
-        <small>Puedes seleccionar varias a la vez</small>
-      </label>
 
       {loading ? (
-        <p className="admin-media-empty">Cargando biblioteca…</p>
-      ) : items.length === 0 ? (
-        <p className="admin-media-empty">Todavía no hay imágenes cargadas.</p>
+        <p className="admin-media-empty">Cargando usuarios…</p>
+      ) : users.length === 0 ? (
+        <p className="admin-media-empty">
+          Todavía no hay cuentas. Usa la contraseña maestra para crear la primera.
+        </p>
       ) : (
-        <>
-          {search && (
-            <p className="admin-media-search-result">
-              {items.filter((i) => i.filename.toLowerCase().includes(search.toLowerCase())).length} resultado(s)
-            </p>
-          )}
-          <div className="admin-media-grid">
-            {items
-              .filter((i) => i.filename.toLowerCase().includes(search.toLowerCase()))
-              .map((item) => (
-            <figure
-              className="admin-media-card"
-              key={item.kv_key}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img alt={item.filename} loading="lazy" src={item.url} />
-              <figcaption>
-                <strong title={item.filename}>{item.filename}</strong>
-                <small>{formatSize(item.size)}</small>
-              </figcaption>
-              <div className="admin-media-actions">
-                <button onClick={() => copyUrl(item)} type="button">Copiar ruta</button>
-                <button onClick={() => remove(item)} type="button">Eliminar</button>
+        <div className="admin-user-list">
+          {users.map((user) => (
+            <article className="admin-user-card" key={user.id}>
+              <div className="admin-user-head">
+                <strong>{user.name}</strong>
+                <em>{roleName[user.role] ?? user.role}</em>
               </div>
-            </figure>
-              ))}
-          </div>
-        </>
+              <p>{user.email}</p>
+              <div className="admin-user-actions">
+                <ToggleRole
+                  session={session}
+                  setNotice={setNotice}
+                  user={user}
+                  onChanged={() => refresh()}
+                />
+                <DeleteUser
+                  session={session}
+                  setNotice={setNotice}
+                  user={user}
+                  onDeleted={() => refresh()}
+                />
+              </div>
+            </article>
+          ))}
+        </div>
       )}
-
     </section>
   );
 }
 
-function ContentPanel({ activeSection, content, onSave }: { activeSection: AdminSection; content: SiteContent; onSave: (content: SiteContent) => void }) {
-  const [draft, setDraft] = useState(content);
-  // Ajuste durante el render: al guardarse el contenido, el borrador se
-  // reinicia sin pasar por un efecto.
-  const [syncedContent, setSyncedContent] = useState(content);
-  if (syncedContent !== content) {
-    setSyncedContent(content);
-    setDraft(content);
-  }
-  const data = activeSection === "banners" ? contentItems.banners : activeSection === "paginas" ? contentItems.paginas : contentItems.faqs;
-  const title = activeSection === "banners" ? "Banners" : activeSection === "paginas" ? "Páginas" : "Preguntas frecuentes";
-  const fields =
-    activeSection === "banners"
-      ? [
-          ["bannerKitTitle", "Título banner kit"],
-          ["bannerKitText", "Texto banner kit"],
-          ["bannerKitCta", "Botón banner kit"],
-          ["bannerColorsTitle", "Título banner colores"],
-          ["bannerColorsText", "Texto banner colores"],
-          ["bannerColorsCta", "Botón banner colores"],
-        ]
-      : activeSection === "paginas"
-        ? [
-            ["heroEyebrow", "Bajada superior inicio"],
-            ["heroTitle", "Título inicio"],
-            ["heroText", "Texto inicio"],
-            ["heroCta", "Botón inicio"],
-            ["catalogTitle", "Título catálogo"],
-            ["catalogIntro", "Texto catálogo"],
-            ["storyTitle", "Título nosotros"],
-            ["storyText", "Texto nosotros"],
-          ]
-        : [
-            ["faqQuestion", "Pregunta frecuente"],
-            ["faqAnswer", "Respuesta"],
-          ];
-
-
-  return (
-    <section className="admin-panel">
-      <div className="admin-panel-heading"><div><p>Contenido dinámico</p><h2>{title}</h2></div><button onClick={() => onSave(draft)} type="button">Guardar y publicar</button></div>
-      <div className="admin-content-cards">
-        {data.map((item) => (
-          <button className="admin-content-card" key={item.title} type="button">
-            <span>{item.area}</span><strong>{item.title}</strong><p>Entrar para cambiar contenido, imagen, estado y orden.</p><em>{item.status}</em>
-          </button>
-        ))}
-      </div>
-      <div className="admin-form-grid admin-content-form">
-        {fields.map(([key, label]) => (
-          <label className={(key.includes("Text") || key.includes("Answer") || key.includes("Intro")) ? "admin-full-field" : ""} key={key}>
-            <span>{label}</span>
-            {(key.includes("Text") || key.includes("Answer") || key.includes("Intro")) ? (
-              <textarea value={draft[key as keyof SiteContent]} onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} />
-            ) : (
-              <input value={draft[key as keyof SiteContent]} onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} />
-            )}
-          </label>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function UsersPanel({
-  admins,
-  setAdmins,
+function UserForm({
+  onDone,
+  session,
+  setNotice,
 }: {
-  admins: { email: string; name: string; permissions: string; role: string }[];
-  setAdmins: (admins: { email: string; name: string; permissions: string; role: string }[]) => void;
+  onDone: () => void;
+  session: { token: string } | null;
+  setNotice: (message: string) => void;
 }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("editor");
+  const [busy, setBusy] = useState(false);
 
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await sessionFetch(session, "/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, role }),
+      });
+      setNotice(`Usuario "${name}" creado.`);
+      onDone();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo crear el usuario.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <section className="admin-panel">
-      <div className="admin-panel-heading"><div><p>Usuarios</p><h2>Administradores</h2></div><button type="button">Invitar usuario</button></div>
-      <p className="admin-panel-intro">Gestiona roles, permisos y acceso a ediciones del catálogo.</p>
-      <div className="admin-user-list">
-        {admins.map((admin, index) => (
-          <div className="admin-user-card" key={admin.email}>
-            <label><span>Nombre</span><input value={admin.name} onChange={(event) => setAdmins(admins.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} /></label>
-            <label><span>Correo</span><input value={admin.email} onChange={(event) => setAdmins(admins.map((item, itemIndex) => itemIndex === index ? { ...item, email: event.target.value } : item))} /></label>
-            <label><span>Rol</span><select value={admin.role} onChange={(event) => setAdmins(admins.map((item, itemIndex) => itemIndex === index ? { ...item, role: event.target.value } : item))}><option>Administrador</option><option>Editor</option><option>Vendedor</option></select></label>
-            <label><span>Permisos</span><input value={admin.permissions} onChange={(event) => setAdmins(admins.map((item, itemIndex) => itemIndex === index ? { ...item, permissions: event.target.value } : item))} /></label>
-          </div>
-        ))}
-      </div>
-    </section>
+    <form className="admin-user-form" onSubmit={submit}>
+      <label>
+        <span>Nombre</span>
+        <input onChange={(event) => setName(event.target.value)} required value={name} />
+      </label>
+      <label>
+        <span>Correo</span>
+        <input onChange={(event) => setEmail(event.target.value)} required type="email" value={email} />
+      </label>
+      <label>
+        <span>Contraseña (mín. 8)</span>
+        <input
+          minLength={8}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+          type="password"
+          value={password}
+        />
+      </label>
+      <label>
+        <span>Rol</span>
+        <select onChange={(event) => setRole(event.target.value)} value={role}>
+          <option value="admin">Administrador</option>
+          <option value="editor">Editor</option>
+          <option value="viewer">Solo lectura</option>
+        </select>
+      </label>
+      <button disabled={busy} type="submit">
+        {busy ? "Creando…" : "Crear usuario"}
+      </button>
+    </form>
   );
 }
 
-function SimplePanel({ intro, items, title }: { intro: string; items: string[]; title: string }) {
+function ToggleRole({
+  session,
+  setNotice,
+  user,
+  onChanged,
+}: {
+  session: { token: string } | null;
+  setNotice: (message: string) => void;
+  user: UserRow;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
 
+  async function change(nextRole: string) {
+    setBusy(true);
+    try {
+      await sessionFetch(session, "/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: user.id, role: nextRole }),
+      });
+      onChanged();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo cambiar el rol.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <section className="admin-panel">
-      <div className="admin-panel-heading"><div><p>Administración</p><h2>{title}</h2></div><button type="button">Entrar</button></div>
-      <p className="admin-panel-intro">{intro}</p>
-      <div className="admin-content-map">{items.map((item) => <span key={item}>{item}</span>)}</div>
-    </section>
+    <select
+      aria-label={`Rol de ${user.name}`}
+      disabled={busy}
+      onChange={(event) => change(event.target.value)}
+      value={user.role}
+    >
+      <option value="admin">Administrador</option>
+      <option value="editor">Editor</option>
+      <option value="viewer">Solo lectura</option>
+    </select>
   );
 }
+
+function DeleteUser({
+  session,
+  setNotice,
+  user,
+  onDeleted,
+}: {
+  session: { token: string } | null;
+  setNotice: (message: string) => void;
+  user: UserRow;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    if (!window.confirm(`¿Eliminar la cuenta de "${user.name}"?`)) return;
+    setBusy(true);
+    try {
+      await sessionFetch(session, `/api/admin/users?id=${user.id}`, { method: "DELETE" });
+      setNotice(`Cuenta de "${user.name}" eliminada.`);
+      onDeleted();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo eliminar la cuenta.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button className="admin-variant-remove" disabled={busy} onClick={remove} type="button">
+      {busy ? "…" : "Eliminar"}
+    </button>
+  );
+}
+

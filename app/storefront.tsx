@@ -46,6 +46,8 @@ export default function Storefront({ products, categories, siteContent, whatsapp
   const [notice, setNotice] = useState("");
   // Color elegido en cada tarjeta: producto -> id de variante.
   const [chosenColor, setChosenColor] = useState<Record<number, number>>({});
+  // Producto abierto en el detalle emergente (pop-up).
+  const [openProduct, setOpenProduct] = useState<Product | null>(null);
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -185,44 +187,59 @@ export default function Storefront({ products, categories, siteContent, whatsapp
         <div className="product-grid">
           {filtered.map((product, index) => (
             <article className="product-card" key={product.id}>
-              <div className="product-image" style={imageStyle(product, chosenColor[product.id])}>
+              <div
+                className="product-image"
+                onClick={() => setOpenProduct(product)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => event.key === "Enter" && setOpenProduct(product)}
+                style={imageStyle(product, chosenColor[product.id])}
+              >
                 {index < 2 && <span className="product-badge">{index === 0 ? "Más vendido" : "Nuevo"}</span>}
-                <button onClick={() => addToCart(product.id)} aria-label={`Agregar ${product.name} a la bolsa`}>+</button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    addToCart(product.id);
+                  }}
+                  aria-label={`Agregar ${product.name} a la bolsa`}
+                >
+                  +
+                </button>
               </div>
-              <div className="product-info">
+              <div
+                className="product-info"
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpenProduct(product)}
+                onKeyDown={(event) => event.key === "Enter" && setOpenProduct(product)}
+              >
                 <div>
                   <p>{product.category} · {product.weight}</p>
                   <h3>{product.name}</h3>
-                  <span>{product.fiber}</span>
-                  <dl className="product-specs">
-                    <div><dt>Colores</dt><dd>{product.colorCount}</dd></div>
-                    <div><dt>Metraje</dt><dd>{product.length}</dd></div>
-                    <div><dt>Palillo</dt><dd>{product.needles}</dd></div>
-                    <div><dt>Crochet</dt><dd>{product.crochet}</dd></div>
-                  </dl>
                   {product.variants?.length ? (
-                    <div className="product-swatches">
-                      <span className="product-swatch-label">
-                        Color{selectedVariant(product, chosenColor) ? `: ${swatchLabel(selectedVariant(product, chosenColor)!)}` : ""}
-                      </span>
-                      <div className="product-swatch-row">
-                        {product.variants.map((variant) => (
-                          <button
-                            aria-label={`Ver color ${swatchLabel(variant)}`}
-                            aria-pressed={chosenColor[product.id] === variant.id}
-                            className={chosenColor[product.id] === variant.id ? "product-swatch product-swatch-active" : "product-swatch"}
-                            key={variant.id}
-                            onClick={() => setChosenColor((current) => ({ ...current, [product.id]: variant.id }))}
-                            style={{ backgroundImage: `url("${variant.imageSource}")` }}
-                            title={swatchLabel(variant)}
-                            type="button"
-                          />
-                        ))}
-                      </div>
+                    <div className="product-card-color-strip" aria-label={`Colores de ${product.name}`}>
+                      {product.variants.map((variant) => (
+                        <button
+                          aria-label={`Elegir color ${swatchLabel(variant)}`}
+                          aria-pressed={chosenColor[product.id] === variant.id}
+                          className={
+                            chosenColor[product.id] === variant.id
+                              ? "product-card-color-thumb product-card-color-thumb-active"
+                              : "product-card-color-thumb"
+                          }
+                          key={variant.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setChosenColor((current) => ({ ...current, [product.id]: variant.id }));
+                          }}
+                          style={{ backgroundImage: `url("${variant.imageSource}")` }}
+                          title={swatchLabel(variant)}
+                          type="button"
+                        />
+                      ))}
                     </div>
-                  ) : (
-                    <small className="product-colors">Códigos: {product.allColors}</small>
-                  )}
+                  ) : null}
+                  <span>{product.fiber}</span>
                 </div>
                 <div className="product-price">
                   <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
@@ -308,19 +325,31 @@ export default function Storefront({ products, categories, siteContent, whatsapp
           {cartItems.length === 0 ? (
             <div className="empty-cart"><span>○</span><h3>Tu bolsa está vacía</h3><p>Agrega algunas lanas para comenzar tu próximo proyecto.</p><button onClick={() => setCartOpen(false)}>Explorar catálogo</button></div>
           ) : (
-            cartItems.map((product) => (
-              <article className="cart-item" key={product.id}>
-                <div
-                  className="cart-thumb"
-                  style={{
-                    ...imageStyle(product, chosenColor[product.id]),
-                  }}
-                />
-                <div><h3>{product.name}</h3><p>{product.color} · {product.weight}</p><strong>{money.format(product.price)}</strong>
-                  <div className="quantity"><button onClick={() => updateQuantity(product.id, -1)} aria-label="Quitar uno">−</button><span>{cart[product.id]}</span><button onClick={() => updateQuantity(product.id, 1)} aria-label="Agregar uno">+</button></div>
-                </div>
-              </article>
-            ))
+            cartItems.map((product) => {
+              const pickedVariant = selectedVariant(product, chosenColor);
+              return (
+                <article className="cart-item" key={product.id}>
+                  <div
+                    className="cart-thumb"
+                    style={{
+                      ...imageStyle(product, chosenColor[product.id]),
+                    }}
+                  />
+                  <div>
+                    <h3>{product.name}</h3>
+                    <p>
+                      {pickedVariant ? `Color: ${swatchLabel(pickedVariant)}` : product.color} · {product.weight}
+                    </p>
+                    <strong>{money.format(product.price)}</strong>
+                    <div className="quantity">
+                      <button onClick={() => updateQuantity(product.id, -1)} aria-label="Quitar uno">−</button>
+                      <span>{cart[product.id]}</span>
+                      <button onClick={() => updateQuantity(product.id, 1)} aria-label="Agregar uno">+</button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })
           )}
         </div>
         {cartItems.length > 0 && (
@@ -345,6 +374,153 @@ export default function Storefront({ products, categories, siteContent, whatsapp
       </aside>
 
       {notice && <div className="toast" role="status">{notice}</div>}
+
+      {openProduct && (
+        <ProductModal
+          product={openProduct}
+          chosenColor={chosenColor[openProduct.id]}
+          onClose={() => setOpenProduct(null)}
+          onAdd={(variantId) => {
+            if (variantId) {
+              setChosenColor((current) => ({ ...current, [openProduct.id]: variantId }));
+            }
+            addToCart(openProduct.id);
+            setOpenProduct(null);
+          }}
+          onPickColor={(variantId) =>
+            setChosenColor((current) => ({ ...current, [openProduct.id]: variantId }))
+          }
+        />
+      )}
     </main>
+  );
+}
+
+function ProductModal({
+  product,
+  chosenColor,
+  onAdd,
+  onClose,
+  onPickColor,
+}: {
+  product: Product;
+  chosenColor?: number;
+  onAdd: (variantId?: number) => void;
+  onClose: () => void;
+  onPickColor: (variantId: number) => void;
+}) {
+  const activeVariant = product.variants?.find((item) => item.id === chosenColor);
+  const colorCodes = (product.allColors || product.color || "")
+    .split(",")
+    .map((code) => code.trim())
+    .filter(Boolean);
+  const colorLabel = activeVariant
+    ? swatchLabel(activeVariant)
+    : product.colorCount > 0
+      ? `${product.colorCount} color(es)`
+      : colorCodes.length
+        ? `${colorCodes.length} color(es)`
+        : "";
+
+  return (
+    <div className="product-modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="product-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Detalle de ${product.name}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button className="product-modal-close" onClick={onClose} aria-label="Cerrar" type="button">
+          ×
+        </button>
+
+        <div
+          className="product-modal-image"
+          style={imageStyle(product, chosenColor)}
+          role="img"
+          aria-label={product.name}
+        />
+
+        <div className="product-modal-body">
+          <p className="product-modal-eyebrow">
+            {product.category} · {product.weight}
+          </p>
+          <h2>{product.name}</h2>
+          <span className="product-modal-fiber">{product.fiber}</span>
+
+          {product.variants?.length ? (
+            <div className="product-modal-color-section product-modal-color-section-top">
+              <span className="product-swatch-label">
+                Elige color{colorLabel ? `: ${colorLabel}` : ""}
+              </span>
+              <div className="product-modal-color-grid">
+                {product.variants.map((variant) => (
+                  <button
+                    aria-label={`Elegir color ${swatchLabel(variant)}`}
+                    aria-pressed={chosenColor === variant.id}
+                    className={
+                      chosenColor === variant.id
+                        ? "product-color-thumb product-color-thumb-active"
+                        : "product-color-thumb"
+                    }
+                    key={variant.id}
+                    onClick={() => onPickColor(variant.id)}
+                    style={{ backgroundImage: `url("${variant.imageSource}")` }}
+                    title={swatchLabel(variant)}
+                    type="button"
+                  >
+                    <span>{swatchLabel(variant)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : colorCodes.length ? (
+            <div className="product-modal-color-section product-modal-color-section-top">
+              <span className="product-swatch-label">
+                Colores disponibles: {colorLabel}
+              </span>
+              <div className="product-color-code-row" aria-label={`Codigos de color de ${product.name}`}>
+                {colorCodes.map((code) => (
+                  <span key={code}>{code}</span>
+                ))}
+              </div>
+              <small className="product-color-missing-note">
+                Faltan fotos miniatura para estos colores. Cuando las cargues en el panel, aparecerán aquí como imágenes.
+              </small>
+            </div>
+          ) : null}
+
+          {product.description ? (
+            <p className="product-modal-desc">{product.description}</p>
+          ) : (
+            <p className="product-modal-desc">
+              {product.name}, de la categoría {product.category.toLowerCase()}. Disponible en{" "}
+              {product.color}.
+            </p>
+          )}
+
+          <dl className="product-modal-spec-line">
+            <div><dt>Composición</dt><dd>{product.fiber || "—"}</dd></div>
+            <div><dt>Gramaje</dt><dd>{product.weight}</dd></div>
+            {product.length && <div><dt>Metraje</dt><dd>{product.length}</dd></div>}
+            {product.needles && <div><dt>Palillo</dt><dd>{product.needles}</dd></div>}
+            {product.crochet && <div><dt>Crochet</dt><dd>{product.crochet}</dd></div>}
+          </dl>
+
+          <div className="product-modal-footer">
+            <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
+            {product.dozenPrice && <small>{product.dozenPrice}</small>}
+            <button
+              className="primary-button product-modal-add"
+              onClick={() => onAdd(chosenColor)}
+              type="button"
+            >
+              Agregar color elegido a la bolsa
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

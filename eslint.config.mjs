@@ -13,6 +13,15 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      // El panel /admin carga datos (productos, categorias, cotizaciones,
+      // usuarios) con un fetch en el efecto de montaje; el setState ocurre
+      // despues de un await, no sincronicamente, asi que no causa cascading
+      // renders. Es el patron estandar de data-fetching en client components.
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

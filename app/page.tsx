@@ -26,6 +26,7 @@ type ProductRow = {
   color_count: number;
   colors_with_photo: string;
   all_colors: string;
+  description?: string;
 };
 
 function toProduct(row: ProductRow): Product {
@@ -47,6 +48,7 @@ function toProduct(row: ProductRow): Product {
     colorCount: row.color_count,
     colorsWithPhoto: row.colors_with_photo,
     allColors: row.all_colors,
+    description: row.description ?? "",
   };
 }
 
@@ -98,7 +100,7 @@ async function loadCatalog(): Promise<{ products: Product[]; categories: string[
     const { results } = await env.DB.prepare(
       `SELECT id, name, category, color, fiber, weight, length, needles, crochet,
               price, kilo_price, dozen_price, image_source, image_position,
-              image_size, color_count, colors_with_photo, all_colors
+              image_size, color_count, colors_with_photo, all_colors, description
        FROM products
        WHERE visible = 1
        ORDER BY id`
