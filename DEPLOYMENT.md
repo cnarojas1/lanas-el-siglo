@@ -20,9 +20,15 @@ la tienda sin necesidad de redesplegar.
 | Account ID | `f7f6884635183bbdf2c77577001262cb` |
 | D1 database | `lanas-el-siglo-db` |
 | D1 database ID | `2edb6cb8-e9e1-443a-aab9-be50396ae5db` |
-| KV namespace (medios) | `aadcce57d7584ffc89159f937fc24818` |
+| R2 bucket (medios) | `lanas-el-siglo-media` |
 | Región D1 | ENAM |
 | Repositorio | https://github.com/cnarojas1/lanas-el-siglo |
+
+Los medios del panel se guardan en **R2** (antes Workers KV). R2 no tiene límite
+diario de operaciones, así que el aviso de "50% del límite diario de Workers KV"
+desaparece. Las imágenes se sirven desde `GET /api/media/[key]` con caché de
+borde de 31 días (inmutable), por lo que R2 solo se consulta la primera vez que
+se pide cada imagen.
 
 ## Desplegar
 
@@ -146,7 +152,7 @@ Es una contraseña compartida, no cuentas por persona. Las secciones
 |---|---|
 | Banners, Páginas, Preguntas frecuentes | D1 (`site_content`) |
 | Listado de productos (precio, nombre, categoría, descripción, visibilidad, imagen) | D1 (`products`) |
-| Medios | KV (binario) + D1 (`media`) |
+| Medios | R2 (binario) + D1 (`media`) |
 | Fotos por color de un producto | D1 (`product_variants`) |
 | Cotizaciones | D1 (`orders`, `order_items`) — solo lectura |
 | Categorías, Marcas, Contactos, Cotizaciones, Reportes, Administradores, Roles, Datos del sitio, SEO | Maqueta: solo la sesión actual |
@@ -159,10 +165,10 @@ Sube varias imágenes a la vez (clic o arrastrando). Se aceptan JPG, PNG, WebP,
 GIF, AVIF y SVG hasta 10 MB. "Copiar ruta" entrega una URL `/api/media/<clave>`
 para pegar en el campo *Imagen* de la ficha de producto.
 
-El binario vive en KV y los metadatos en D1. Lo natural sería R2, pero **R2 no
-está habilitado en la cuenta** (`code: 10042`): hay que activarlo desde el
-dashboard, lo que implica aceptar sus términos. KV admite hasta 25 MB por valor,
-suficiente para el catálogo actual.
+El binario vive en R2 (bucket `lanas-el-siglo-media`) y los metadatos en D1.
+R2 no tiene límite diario de operaciones y las lecturas públicas se sirven desde
+caché de borde (31 días, inmutable), así que el costo de servir el catálogo es
+mínimo y no vuelve a aparecer el aviso de límite de Workers KV.
 
 Las claves llevan un prefijo aleatorio, así que dos archivos con el mismo nombre
 no se pisan y las imágenes se sirven con caché inmutable de un año.
@@ -242,9 +248,34 @@ Lo que todavía NO está hecho, en orden de importancia:
 4. **El panel usa una contraseña compartida**, no cuentas por persona con
    registro de quién cambió qué.
 5. **No hay CI/CD.** El deploy es manual con `npx vinext deploy`.
-6. **R2 no está habilitado** en la cuenta, así que los medios subidos viven en
-   KV. Funciona para el volumen actual; si la biblioteca crece mucho, conviene
-   habilitar R2 y migrarlos.
+
+## Migración KV → R2 (medios)
+
+Cambio hecho el 2026-08-01 para salir del límite diario de Workers KV (aviso de
+50% de operaciones). Procedimiento completo:
+
+1. **Activar R2** en el dashboard: `R2 Storage` → *Accept terms of service*
+   (una sola vez, sin costo, sigue en el plan free).
+2. **Crear el bucket** `lanas-el-siglo-media`.
+3. **Generar credenciales R2**: `R2` → *Manage R2 API Tokens* → *Create Access
+   Token* (permisos: Object Read & Write sobre el bucket). Guardar
+   `ACCESS_KEY_ID` y `SECRET_ACCESS_KEY`.
+4. **Migrar las imágenes existentes** (las subidas antes del cambio siguen en
+   KV; las nuevas ya van a R2):
+
+   ```bash
+   R2_ACCESS_KEY_ID=<id> R2_SECRET_ACCESS_KEY=<secret> \
+   node scripts/migrate-kv-to-r2.mjs
+   ```
+
+   El script copia las 800+ claves del namespace KV `MEDIA` al bucket R2 con la
+   misma clave y Content-Type, así las URLs no cambian.
+5. **Desplegar**: `npx vinext deploy`.
+6. **Verificar**: abrir un par de imágenes del catálogo y confirmar que
+   responden `200` con `Cache-Control: public, max-age=2678400, immutable`.
+7. (Opcional, después de verificar) **vaciar el namespace KV** `MEDIA`
+   (`aadcce57d7584ffc89159f937fc24818`) desde el dashboard o
+   `wrangler kv key bulk-delete` para liberar el almacenamiento del plan free.
 
 ## Dominio propio
 

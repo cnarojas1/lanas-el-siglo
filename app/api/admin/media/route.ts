@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { authorize } from "@/lib/admin-auth";
+import { getRequestExecutionContext } from "vinext/shims/request-context";
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB por archivo.
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/svg+xml"]);
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
     const kvKey = `${crypto.randomUUID().slice(0, 8)}-${slugify(file.name)}`;
 
     await env.MEDIA.put(kvKey, await file.arrayBuffer(), {
-      metadata: { contentType: file.type, filename: file.name },
+      httpMetadata: { contentType: file.type },
     });
 
     try {
@@ -131,5 +132,12 @@ export async function DELETE(request: Request) {
   }
 
   await env.MEDIA.delete(key);
+
+  // Invalida la copia cacheada en el borde para que la imagen borrada no siga
+  // sirviendose desde cache.
+  const origin = new URL(request.url).origin;
+  const cacheKey = new Request(`${origin}/api/media/${key}`, { method: "GET" });
+  getRequestExecutionContext()?.waitUntil(caches.default.delete(cacheKey));
+
   return Response.json({ deleted: key });
 }
