@@ -1,6 +1,7 @@
 name = "lanas-el-siglo"
 workers_dev = true
 compatibility_date = "2026-05-15"
+account_id = "f7f6884635183bbdf2c77577001262cb"
 # nodejs_compat lo agrega vinext durante el build; no lo repitas aqui.
 
 # Base de datos D1 para ordenes, inventario, usuarios
