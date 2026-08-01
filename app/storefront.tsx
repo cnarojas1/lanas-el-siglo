@@ -11,6 +11,8 @@ const money = new Intl.NumberFormat("es-CL", {
   maximumFractionDigits: 0,
 });
 
+const DEPLOY_VERSION = "mobile-colors-2026-08-01-1138";
+
 function swatchLabel(variant: ProductVariant) {
   return variant.colorName ? `${variant.code} · ${variant.colorName}` : variant.code;
 }
@@ -125,7 +127,7 @@ export default function Storefront({ products, categories, siteContent, whatsapp
   }
 
   return (
-    <main>
+    <main data-version={DEPLOY_VERSION}>
       <div className="shipping-bar">Despacho a todo Chile · Envío gratis sobre $45.000</div>
 
       <header className="site-header">
