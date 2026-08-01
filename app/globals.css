@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  --mobile-refresh-version: "2026-08-01-0107";
   --cream: #f7f1e7;
   --paper: #fffdf8;
   --terracotta: #c75f3b;
