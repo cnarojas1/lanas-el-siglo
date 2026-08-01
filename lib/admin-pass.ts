@@ -7,7 +7,8 @@
  * Formato almacenado:  pbkdf2$<iterations>$<salt_b64>$<hash_b64>
  */
 
-const ITERATIONS = 120_000;
+// Cloudflare Workers limita PBKDF2 a 100.000 iteraciones.
+const ITERATIONS = 100_000;
 const KEY_LENGTH = 32; // bytes
 const PREFIX = "pbkdf2";
 
