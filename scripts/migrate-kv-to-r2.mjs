@@ -45,6 +45,9 @@ const API_TOKEN =
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 
+// Cuántas claves se procesan en paralelo (cada una: 1 GET a KV + 1 PUT a R2).
+const CONCURRENCY = Number(process.env.MIGRATE_CONCURRENCY || 10);
+
 if (!API_TOKEN) {
   console.error("Falta CLOUDFLARE_API_TOKEN (o el token OAuth de wrangler).");
   process.exit(1);
@@ -85,8 +88,14 @@ function r2Sign(method, path, headers) {
   const dateStamp = amzDate.slice(0, 8);
   const region = "auto";
   const service = "s3";
+  const payloadHash = "UNSIGNED-PAYLOAD";
 
-  const allHeaders = { host: new URL(S3_ENDPOINT).host, "x-amz-date": amzDate, ...headers };
+  const allHeaders = {
+    host: new URL(S3_ENDPOINT).host,
+    "x-amz-date": amzDate,
+    "x-amz-content-sha256": payloadHash,
+    ...headers,
+  };
   const sortedKeys = Object.keys(allHeaders).sort();
   const canonicalHeaders = sortedKeys.map((k) => `${k.toLowerCase()}:${allHeaders[k]}\n`).join("");
   const signedHeaders = sortedKeys.map((k) => k.toLowerCase()).join(";");
@@ -97,7 +106,7 @@ function r2Sign(method, path, headers) {
     "",
     canonicalHeaders,
     signedHeaders,
-    "UNSIGNED-PAYLOAD",
+    payloadHash,
   ].join("\n");
 
   const scope = `${dateStamp}/${region}/${service}/aws4_request`;
@@ -117,6 +126,7 @@ function r2Sign(method, path, headers) {
   return {
     authorization: `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
     "x-amz-date": amzDate,
+    "x-amz-content-sha256": payloadHash,
   };
 }
 
@@ -135,8 +145,20 @@ async function r2Put(key, buf, contentType) {
   }
 }
 
+/** Procesa una lista de claves con concurrencia limitada. */
+async function runWithConcurrency(keys, worker) {
+  let index = 0;
+  const runner = async () => {
+    while (index < keys.length) {
+      const i = index++;
+      await worker(keys[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, keys.length) }, runner));
+}
+
 async function main() {
-  console.log(`Migrando KV(${KV_NAMESPACE}) -> R2(${BUCKET})...`);
+  console.log(`Migrando KV(${KV_NAMESPACE}) -> R2(${BUCKET}) con concurrencia ${CONCURRENCY}...`);
   let cursor = "";
   let total = 0;
   let ok = 0;
@@ -145,8 +167,8 @@ async function main() {
   do {
     const { keys, cursor: nextCursor } = await kvList(cursor);
     cursor = nextCursor;
-    for (const key of keys) {
-      total++;
+
+    await runWithConcurrency(keys, async (key) => {
       try {
         const { buf, contentType } = await kvGet(key);
         await r2Put(key, buf, contentType);
@@ -155,10 +177,11 @@ async function main() {
         failed++;
         console.error(`  ✗ ${key}: ${err.message}`);
       }
+      total++;
       if (total % 100 === 0) {
         console.log(`  ...${total} procesadas (${ok} ok, ${failed} fallidas)`);
       }
-    }
+    });
   } while (cursor);
 
   console.log(`\nListo: ${ok}/${total} objetos migrados, ${failed} fallidas.`);
