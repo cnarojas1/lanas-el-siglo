@@ -57,8 +57,15 @@ npx wrangler d1 execute lanas-el-siglo-db --file=db/init.sql --remote
 npx wrangler d1 execute lanas-el-siglo-db --file=db/seed.sql --remote
 ```
 
-Tablas: `products`, `orders`, `order_items`, `inventory`, `users`, `carts`,
-`cart_items`. Actualmente hay 36 productos en 6 categorías.
+Tablas: `products`, `product_variants`, `media`, `site_content`, `orders`,
+`order_items`, `inventory`, `users`, `carts`, `cart_items`. Actualmente hay 36
+productos en 6 categorías.
+
+Las migraciones de `db/migrations/` se aplican en orden sobre el esquema base:
+
+```bash
+npx wrangler d1 execute lanas-el-siglo-db --file=db/migrations/004_variantes.sql --remote
+```
 
 Para consultar el contenido actual:
 
@@ -96,6 +103,11 @@ vacía, la home lo usa para no quedar sin catálogo.
 ## API
 
 `GET /api/products` — lee de D1. Acepta `?category=`, `?search=`, `?limit=`, `?offset=`.
+
+`GET /api/admin/variants?product_id=N` — colores de un producto (lectura
+pública). `POST` crea variantes desde `codes` o reparte `images`; `PUT`
+actualiza código, nombre e imagen; `DELETE ?id=N` elimina. Las tres escrituras
+exigen `ADMIN_TOKEN`.
 
 `POST /api/orders` — deja registrada una cotización (público, sin datos de
 contacto). `GET /api/orders` — listado para el panel, requiere `ADMIN_TOKEN`.
@@ -135,6 +147,7 @@ Es una contraseña compartida, no cuentas por persona. Las secciones
 | Banners, Páginas, Preguntas frecuentes | D1 (`site_content`) |
 | Listado de productos (precio, nombre, categoría, descripción, visibilidad, imagen) | D1 (`products`) |
 | Medios | KV (binario) + D1 (`media`) |
+| Fotos por color de un producto | D1 (`product_variants`) |
 | Cotizaciones | D1 (`orders`, `order_items`) — solo lectura |
 | Categorías, Marcas, Contactos, Cotizaciones, Reportes, Administradores, Roles, Datos del sitio, SEO | Maqueta: solo la sesión actual |
 
@@ -153,6 +166,34 @@ suficiente para el catálogo actual.
 
 Las claves llevan un prefijo aleatorio, así que dos archivos con el mismo nombre
 no se pisan y las imágenes se sirven con caché inmutable de un año.
+
+### Fotos por color
+
+Un producto puede tener varias fotos: una por código de color. Viven en
+`product_variants` (migración `db/migrations/004_variantes.sql`), no en un campo
+de texto, porque cada código necesita colgar su propia imagen.
+
+En la ficha de producto, bajo el formulario, está **Más fotos de este producto**:
+
+- **Agregar fotos** abre la biblioteca en selección múltiple y crea un color por
+  imagen marcada.
+- **Generar desde códigos** crea una variante por cada valor de *Colores /
+  códigos*, para asignarles la foto después. Es idempotente: repetirlo no
+  duplica ni pisa las fotos ya puestas.
+
+Los códigos nuevos salen de los que el producto ya declara (`000`, `001`…). Las
+fotos se reparten primero entre los códigos que aún no tienen imagen; solo las
+sobrantes crean códigos nuevos. Las variantes se guardan al momento, sin pasar
+por "Guardar cambios".
+
+En la tienda salen como círculos bajo la ficha: al pulsarlos cambia la foto y el
+código mostrado, y el color viaja en el mensaje de WhatsApp. **Solo se envían a
+la tienda las variantes con foto**; un código sin imagen no aporta nada al
+selector y llenaría la ficha de círculos vacíos.
+
+Las fotos subidas se encuadran con `cover`/`center`. Las imágenes del bundle son
+recortes de una lámina con zoom propio (`imageSize: "500% 500%"`), y aplicar ese
+zoom a una foto normal la deforma.
 
 ## Cotizaciones
 
