@@ -331,7 +331,9 @@ export default function AdminPage() {
 
     if (response.status === 401) {
       signOut();
-      throw new Error("Contraseña incorrecta o sesión expirada.");
+      throw new Error(
+        "Tu sesión terminó (se pierde al cerrar la pestaña). Vuelve a ingresar la contraseña del panel."
+      );
     }
 
     if (!response.ok) {
@@ -711,8 +713,14 @@ type Variant = {
   sort_order: number;
 };
 
-/** A que campo escribe el selector de imagenes: la foto principal o un color. */
-type ImageTarget = { kind: "product" } | { kind: "variant"; id: number; code: string };
+/**
+ * A que escribe el selector de imagenes: la foto principal, un color concreto
+ * o una tanda de colores nuevos (seleccion multiple).
+ */
+type ImageTarget =
+  | { kind: "product" }
+  | { kind: "variant"; id: number; code: string }
+  | { kind: "bulk" };
 
 function ProductEditor({
   authedFetch,
@@ -743,6 +751,8 @@ function ProductEditor({
   const [uploading, setUploading] = useState(false);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [variantsBusy, setVariantsBusy] = useState(false);
+  // Fotos marcadas en el modo "agregar varias".
+  const [picked, setPicked] = useState<string[]>([]);
 
   // Las variantes viven en su propia tabla, asi que se recargan al cambiar de ficha.
   useEffect(() => {
@@ -835,9 +845,39 @@ function ProductEditor({
     }
   }
 
+  /** Agrega de una vez todas las fotos marcadas como colores del producto. */
+  async function addPickedImages() {
+    if (!picked.length) return;
+
+    setVariantsBusy(true);
+    try {
+      const response = await authedFetch("/api/admin/variants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product_id: product.id, images: picked }),
+      });
+      const { variants: rows } = (await response.json()) as { variants: Variant[] };
+      setVariants(rows ?? []);
+      setNotice(`${picked.length} foto(s) agregadas a ${product.name}. Ajusta el código y el nombre de cada color.`);
+      setPicked([]);
+      setImageTarget(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudieron agregar las fotos.");
+    } finally {
+      setVariantsBusy(false);
+    }
+  }
+
   /** Aplica la imagen elegida al destino que abrio el selector. */
   function applyImage(url: string) {
     if (!imageTarget) return;
+
+    if (imageTarget.kind === "bulk") {
+      setPicked((current) =>
+        current.includes(url) ? current.filter((item) => item !== url) : [...current, url]
+      );
+      return;
+    }
 
     if (imageTarget.kind === "product") {
       setProduct({ ...product, imageSource: url });
@@ -862,6 +902,14 @@ function ProductEditor({
 
       if (!uploaded?.length) {
         setNotice("No se subió ninguna imagen.");
+        return;
+      }
+
+      // En modo "agregar varias" se marcan todas las recién subidas.
+      if (imageTarget?.kind === "bulk") {
+        setPicked((current) => [...current, ...uploaded.map((item) => item.url)]);
+        setModalTab("medios");
+        setNotice(`${uploaded.length} foto(s) subidas y marcadas.`);
         return;
       }
 
@@ -937,18 +985,48 @@ function ProductEditor({
         <section className="admin-variants">
           <div className="admin-variants-heading">
             <div>
-              <span className="admin-field-label">Colores por código</span>
-              <p>Cada código puede tener su propia foto. Se guarda al momento, sin pulsar &quot;Guardar cambios&quot;.</p>
+              <span className="admin-field-label">Fotos por color</span>
+              <p>
+                Un producto puede tener varias fotos: una por color. En la tienda salen como
+                círculos bajo la ficha y al pulsarlos cambia la imagen. Se guardan al momento,
+                sin pasar por &quot;Guardar cambios&quot;.
+              </p>
             </div>
-            <button type="button" onClick={seedVariants} disabled={!canWrite || variantsBusy}>
-              {variantsBusy ? "Generando…" : "Generar desde códigos"}
-            </button>
+            <div className="admin-variants-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setPicked([]);
+                  setModalTab("medios");
+                  setImageTarget({ kind: "bulk" });
+                }}
+                disabled={!canWrite || variantsBusy}
+              >
+                Agregar fotos
+              </button>
+              <button
+                className="admin-variants-secondary"
+                type="button"
+                onClick={seedVariants}
+                disabled={!canWrite || variantsBusy}
+              >
+                {variantsBusy ? "Trabajando…" : "Generar desde códigos"}
+              </button>
+            </div>
           </div>
+
+          {!canWrite && (
+            <p className="admin-variants-locked">
+              Ingresa la contraseña del panel (arriba, en <strong>Modo lectura</strong>) para editar los colores.
+            </p>
+          )}
 
           {variants.length === 0 ? (
             <p className="admin-variants-empty">
-              Todavía no hay códigos separados. Usa &quot;Generar desde códigos&quot; para crear uno por cada
-              valor del campo <em>Colores / códigos</em>.
+              Todavía no hay colores. <strong>Agregar fotos</strong> te deja marcar varias imágenes
+              de la biblioteca y crea un color por cada una. <strong>Generar desde códigos</strong>
+              crea uno por cada valor del campo <em>Colores / códigos</em>, para que luego les
+              asignes la foto.
             </p>
           ) : (
             <div className="admin-variant-grid">
@@ -956,9 +1034,13 @@ function ProductEditor({
                 <div className="admin-variant-card" key={variant.id}>
                   <button
                     className="admin-variant-image"
+                    disabled={!canWrite}
                     type="button"
-                    onClick={() => setImageTarget({ kind: "variant", id: variant.id, code: variant.code })}
-                    title="Elegir imagen para este código"
+                    onClick={() => {
+                      setModalTab("medios");
+                      setImageTarget({ kind: "variant", id: variant.id, code: variant.code });
+                    }}
+                    title={canWrite ? "Elegir imagen para este código" : "Inicia sesión para cambiar la foto"}
                   >
                     {variant.image_source ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
@@ -1003,7 +1085,9 @@ function ProductEditor({
               <h2>
                 {imageTarget.kind === "product"
                   ? `Imagen principal de ${product.name}`
-                  : `Imagen del código ${imageTarget.code}`}
+                  : imageTarget.kind === "bulk"
+                    ? `Agregar colores a ${product.name}`
+                    : `Imagen del código ${imageTarget.code}`}
               </h2>
               <button className="admin-modal-close" onClick={() => setImageTarget(null)} aria-label="Cerrar">×</button>
             </div>
@@ -1030,6 +1114,7 @@ function ProductEditor({
                 <label className="admin-dropzone">
                   <input
                     accept="image/*"
+                    multiple
                     disabled={uploading || !canWrite}
                     onChange={(event) => {
                       uploadAndApply(event.target.files);
@@ -1052,21 +1137,40 @@ function ProductEditor({
                     type="text"
                     value={mediaSearch}
                   />
+                  {imageTarget.kind === "bulk" && (
+                    <p className="admin-modal-hint">
+                      Marca todas las fotos que quieras. Cada una se convierte en un color del
+                      producto; después les pones el código y el nombre.
+                    </p>
+                  )}
                   <div className="admin-media-grid-modal">
-                    {visibleMedia.map((media) => (
-                      <button
-                        className="admin-media-card-modal"
-                        key={media.id}
-                        onClick={() => applyImage(media.url)}
-                        type="button"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img alt={media.filename} loading="lazy" src={media.url} />
-                        <small>{media.filename}</small>
-                      </button>
-                    ))}
+                    {visibleMedia.map((media) => {
+                      const marked = picked.includes(media.url);
+                      return (
+                        <button
+                          aria-pressed={imageTarget.kind === "bulk" ? marked : undefined}
+                          className={marked ? "admin-media-card-modal admin-media-card-picked" : "admin-media-card-modal"}
+                          key={media.id}
+                          onClick={() => applyImage(media.url)}
+                          type="button"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img alt={media.filename} loading="lazy" src={media.url} />
+                          <small>{media.filename}</small>
+                        </button>
+                      );
+                    })}
                   </div>
                 </>
+              )}
+
+              {imageTarget.kind === "bulk" && (
+                <div className="admin-modal-footer">
+                  <span>{picked.length} foto(s) marcadas</span>
+                  <button disabled={!picked.length || variantsBusy} onClick={addPickedImages} type="button">
+                    {variantsBusy ? "Agregando…" : `Agregar ${picked.length || ""} color(es)`}
+                  </button>
+                </div>
               )}
             </div>
           </div>

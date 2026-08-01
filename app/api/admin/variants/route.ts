@@ -11,7 +11,17 @@ type VariantPayload = {
 type SeedPayload = {
   product_id?: number;
   codes?: string[];
+  images?: string[];
 };
+
+/** Siguiente codigo libre: continua la numeracion que ya usa el producto. */
+function nextCode(existing: { code: string }[], offset: number) {
+  const numeric = existing
+    .map((row) => Number(row.code))
+    .filter((value) => Number.isFinite(value));
+  const base = numeric.length ? Math.max(...numeric) : 0;
+  return String(base + offset);
+}
 
 /** GET /api/admin/variants?product_id=1 — variantes de un producto. Lectura publica. */
 export async function GET(request: Request) {
@@ -66,8 +76,13 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .slice(0, 300);
 
-  if (!codes.length) {
-    return Response.json({ error: "No hay codigos que crear." }, { status: 400 });
+  const images = (payload.images ?? [])
+    .map((url) => String(url).trim())
+    .filter(Boolean)
+    .slice(0, 100);
+
+  if (!codes.length && !images.length) {
+    return Response.json({ error: "No hay nada que agregar." }, { status: 400 });
   }
 
   const statements = codes.map((code, index) =>
@@ -77,6 +92,39 @@ export async function POST(request: Request) {
        ON CONFLICT (product_id, code) DO NOTHING`
     ).bind(productId, code, index)
   );
+
+  // Las fotos se reparten primero entre los codigos que aun no tienen imagen;
+  // las sobrantes crean codigos nuevos siguiendo la numeracion del producto.
+  if (images.length) {
+    const { results: current } = await env.DB.prepare(
+      `SELECT id, code, image_source, sort_order FROM product_variants
+       WHERE product_id = ? ORDER BY sort_order, id`
+    )
+      .bind(productId)
+      .all<{ id: number; code: string; image_source: string; sort_order: number }>();
+
+    const empty = current.filter((row) => !row.image_source);
+    let created = 0;
+
+    images.forEach((url, index) => {
+      const slot = empty[index];
+      if (slot) {
+        statements.push(
+          env.DB.prepare("UPDATE product_variants SET image_source = ? WHERE id = ?").bind(url, slot.id)
+        );
+        return;
+      }
+
+      created += 1;
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO product_variants (product_id, code, image_source, sort_order)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT (product_id, code) DO NOTHING`
+        ).bind(productId, nextCode(current, created), url, current.length + created)
+      );
+    });
+  }
 
   await env.DB.batch(statements);
 

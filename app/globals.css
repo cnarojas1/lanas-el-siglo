@@ -2690,3 +2690,117 @@ footer small {
   border-color: var(--paper);
   box-shadow: 0 0 0 2px var(--terracotta);
 }
+
+.admin-variants-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.admin-variants-actions button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--terracotta);
+  color: #fff;
+  padding: 10px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-variants-actions button:hover:not(:disabled) {
+  background: var(--terracotta-dark);
+}
+
+.admin-variants-actions .admin-variants-secondary {
+  background: transparent;
+  color: var(--terracotta);
+  border: 1px solid var(--terracotta);
+}
+
+.admin-variants-actions .admin-variants-secondary:hover:not(:disabled) {
+  background: var(--terracotta);
+  color: #fff;
+}
+
+.admin-variants-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-variants-locked {
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border-radius: 8px;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.admin-variant-image:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.admin-modal-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.admin-media-card-picked {
+  border-color: var(--terracotta);
+  box-shadow: 0 0 0 2px var(--terracotta);
+  position: relative;
+}
+
+.admin-media-card-picked::after {
+  content: "✓";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--terracotta);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.admin-modal-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.admin-modal-footer span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.admin-modal-footer button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--terracotta);
+  color: #fff;
+  padding: 11px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-modal-footer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
