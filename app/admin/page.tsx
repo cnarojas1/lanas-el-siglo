@@ -933,6 +933,7 @@ function ProductEditor({
 
   return (
     <>
+      <div className="admin-editor-column">
       <article className="admin-panel admin-editor">
         <div className="admin-panel-heading"><div><p>Ficha editable</p><h2>{title}</h2></div><button onClick={onSave} type="button">Guardar cambios</button></div>
         <div className="admin-editor-content">
@@ -992,7 +993,7 @@ function ProductEditor({
       <section className="admin-panel admin-variants">
           <div className="admin-variants-heading">
             <div>
-              <span className="admin-field-label">Fotos por color</span>
+              <span className="admin-field-label">Más fotos de este producto</span>
               <p>
                 Un producto puede tener varias fotos: una por color. En la tienda salen como
                 círculos bajo la ficha y al pulsarlos cambia la imagen. Se guardan al momento,
@@ -1089,6 +1090,7 @@ function ProductEditor({
             </div>
           )}
       </section>
+      </div>
 
       {imageTarget && (
         <div className="admin-modal-overlay" onClick={() => setImageTarget(null)}>

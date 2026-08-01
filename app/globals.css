@@ -2563,8 +2563,13 @@ footer small {
 }
 
 /* Colores por codigo — panel de administracion */
-.admin-variants {
-  grid-column: 1 / -1;
+/* Ficha y paleta viven apiladas en la columna derecha: como filas del grid,
+   el listado dictaba la altura y separaba la paleta cientos de pixeles. */
+.admin-editor-column {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
 }
 
 .admin-variants-heading {
