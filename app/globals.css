@@ -1218,6 +1218,16 @@ footer small {
   align-items: center;
 }
 
+.admin-panel-heading {
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.admin-panel-heading > div {
+  min-width: 0;
+}
+
 .admin-topbar {
   justify-content: space-between;
   margin-bottom: 28px;
@@ -1304,7 +1314,7 @@ footer small {
 }
 
 .admin-products-layout {
-  grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(285px, 0.5fr) minmax(0, 1.5fr);
 }
 
 .admin-products-list {
@@ -1351,11 +1361,24 @@ footer small {
 }
 
 .admin-row {
-  grid-template-columns: 58px minmax(0, 1fr) auto auto;
-  gap: 13px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 10px;
   border: 1px solid #eee7dc;
   border-radius: 8px;
+}
+
+/* El bloque de texto cede espacio; precio y estado bajan de linea si no caben. */
+.admin-row > div {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.admin-row > div strong,
+.admin-row > div small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-row-button {
@@ -2362,8 +2385,8 @@ footer small {
 
 .admin-editor-content {
   display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 32px;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 24px;
   padding: 24px;
 }
 
@@ -2376,8 +2399,8 @@ footer small {
 }
 
 .admin-image-display {
-  width: 280px;
-  height: 280px;
+  width: 210px;
+  height: 210px;
   border: 2px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
@@ -2422,8 +2445,20 @@ footer small {
 
 .admin-form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
+}
+
+/* Sin esto el ancho por defecto del input ensancha su columna y desborda. */
+.admin-editor-form label {
+  min-width: 0;
+}
+
+.admin-editor-form input,
+.admin-editor-form select,
+.admin-editor-form textarea {
+  width: 100%;
+  min-width: 0;
 }
 
 .admin-form-full {
@@ -2529,9 +2564,7 @@ footer small {
 
 /* Colores por codigo — panel de administracion */
 .admin-variants {
-  border-top: 1px solid var(--line);
-  margin: 0 24px 24px;
-  padding-top: 20px;
+  grid-column: 1 / -1;
 }
 
 .admin-variants-heading {
@@ -2582,18 +2615,19 @@ footer small {
 
 .admin-variant-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 10px;
 }
 
 .admin-variant-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 10px;
+  padding: 8px;
   background: var(--paper);
+  min-width: 0;
 }
 
 .admin-variant-image {
@@ -2628,9 +2662,10 @@ footer small {
 .admin-variant-color {
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 7px 9px;
-  font-size: 13px;
+  padding: 6px 8px;
+  font-size: 12px;
   width: 100%;
+  min-width: 0;
 }
 
 .admin-variant-code {

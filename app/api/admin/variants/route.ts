@@ -12,6 +12,8 @@ type SeedPayload = {
   product_id?: number;
   codes?: string[];
   images?: string[];
+  /** Codigos declarados del producto: nombran las fotos nuevas, no se crean solos. */
+  available_codes?: string[];
 };
 
 /** Siguiente codigo libre: continua la numeracion que ya usa el producto. */
@@ -104,6 +106,14 @@ export async function POST(request: Request) {
       .all<{ id: number; code: string; image_source: string; sort_order: number }>();
 
     const empty = current.filter((row) => !row.image_source);
+
+    // Los codigos nuevos salen de los que el producto ya declara (000, 001...);
+    // inventar "1, 2, 3" dejaria la foto en un codigo que la tienda no usa.
+    const used = new Set(current.map((row) => row.code));
+    const pool = (payload.available_codes ?? [])
+      .map((code) => String(code).trim())
+      .filter((code) => code && !used.has(code));
+
     let created = 0;
 
     images.forEach((url, index) => {
@@ -116,12 +126,13 @@ export async function POST(request: Request) {
       }
 
       created += 1;
+      const code = pool.shift() ?? nextCode(current, created);
       statements.push(
         env.DB.prepare(
           `INSERT INTO product_variants (product_id, code, image_source, sort_order)
            VALUES (?, ?, ?, ?)
            ON CONFLICT (product_id, code) DO NOTHING`
-        ).bind(productId, nextCode(current, created), url, current.length + created)
+        ).bind(productId, code, url, current.length + created)
       );
     });
   }

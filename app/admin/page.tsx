@@ -796,9 +796,11 @@ function ProductEditor({
     };
   }, [imageTarget]);
 
+  const declaredCodes = product.allColors.split(",").map((code) => code.trim()).filter(Boolean);
+
   /** Crea una variante por cada codigo del campo "Colores / codigos". */
   async function seedVariants() {
-    const codes = product.allColors.split(",").map((code) => code.trim()).filter(Boolean);
+    const codes = declaredCodes;
     if (!codes.length) {
       setNotice("Escribe los códigos en \"Colores / códigos\" antes de generarlos.");
       return;
@@ -854,7 +856,11 @@ function ProductEditor({
       const response = await authedFetch("/api/admin/variants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product_id: product.id, images: picked }),
+        body: JSON.stringify({
+          product_id: product.id,
+          images: picked,
+          available_codes: declaredCodes,
+        }),
       });
       const { variants: rows } = (await response.json()) as { variants: Variant[] };
       setVariants(rows ?? []);
@@ -981,8 +987,9 @@ function ProductEditor({
             <label className="admin-switch"><input checked={product.visible} type="checkbox" onChange={(event) => setProduct({ ...product, visible: event.target.checked })} /><span>Visible en la tienda</span></label>
           </div>
         </div>
+      </article>
 
-        <section className="admin-variants">
+      <section className="admin-panel admin-variants">
           <div className="admin-variants-heading">
             <div>
               <span className="admin-field-label">Fotos por color</span>
@@ -1030,6 +1037,11 @@ function ProductEditor({
             </p>
           ) : (
             <div className="admin-variant-grid">
+              <datalist id={`codigos-${product.id}`}>
+                {declaredCodes.map((code) => (
+                  <option key={code} value={code} />
+                ))}
+              </datalist>
               {variants.map((variant) => (
                 <div className="admin-variant-card" key={variant.id}>
                   <button
@@ -1052,6 +1064,7 @@ function ProductEditor({
                   <input
                     aria-label={`Código ${variant.code}`}
                     className="admin-variant-code"
+                    list={`codigos-${product.id}`}
                     defaultValue={variant.code}
                     onBlur={(event) => {
                       const next = event.target.value.trim();
@@ -1075,8 +1088,7 @@ function ProductEditor({
               ))}
             </div>
           )}
-        </section>
-      </article>
+      </section>
 
       {imageTarget && (
         <div className="admin-modal-overlay" onClick={() => setImageTarget(null)}>
