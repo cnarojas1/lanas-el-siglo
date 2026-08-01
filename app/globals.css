@@ -2039,31 +2039,45 @@ footer small {
   color: var(--terracotta);
 }
 
-.admin-gate {
+.admin-gate-wrap {
+  min-height: 100vh;
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(160deg, #f4f1ec 0%, #e7dccb 100%);
+  box-sizing: border-box;
+}
+
+.admin-gate {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--cream);
-  padding: 18px 20px;
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 34px 30px;
+  box-shadow: 0 24px 60px rgba(27, 40, 34, 0.14);
 }
 
 .admin-gate > div {
-  flex: 1 1 260px;
+  text-align: center;
+  margin-bottom: 6px;
 }
 
 .admin-gate strong {
   display: block;
-  font-size: 14px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 26px;
   color: var(--forest);
 }
 
 .admin-gate p {
-  margin: 4px 0 0;
+  margin: 8px 0 0;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--muted);
 }
 
@@ -2082,9 +2096,10 @@ footer small {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper);
-  padding: 10px 12px;
-  font-size: 14px;
-  min-width: 220px;
+  padding: 12px 14px;
+  font-size: 15px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-gate button {
@@ -2092,13 +2107,26 @@ footer small {
   border-radius: 8px;
   background: var(--terracotta);
   color: #fff;
-  padding: 11px 22px;
-  font-size: 14px;
+  padding: 13px 22px;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
+  width: 100%;
 }
 
 .admin-gate button:hover {
   background: var(--terracotta-dark);
+}
+
+.admin-gate-error {
+  margin: 0;
+  border-radius: 8px;
+  background: #fdecea;
+  border: 1px solid #f5c6c0;
+  color: #a23022;
+  padding: 10px 12px;
+  font-size: 13px;
+  text-align: center;
 }
 
 /* --- Biblioteca de medios --- */

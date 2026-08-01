@@ -124,6 +124,15 @@ export default function AdminPage() {
   const canWrite = Boolean(session && session.user.role !== "viewer");
   const isAdmin = Boolean(session && session.user.role === "admin");
 
+  // Sin sesion: pantalla de login dedicada y limpia, sin sidebar ni topbar.
+  if (!session) {
+    return (
+      <main className="admin-gate-wrap">
+        <LoginForm setNotice={setNotice} />
+      </main>
+    );
+  }
+
   return (
     <main className="admin-shell">
       <aside className="admin-sidebar">
@@ -168,9 +177,6 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {!session ? (
-          <LoginForm setNotice={setNotice} />
-        ) : (
           <>
             {notice && <div className="admin-notice">{notice}</div>}
             {activeSection === "resumen" && (
@@ -194,7 +200,6 @@ export default function AdminPage() {
                 </p>
               ))}
           </>
-        )}
       </section>
     </main>
   );
@@ -204,11 +209,16 @@ function LoginForm({ setNotice }: { setNotice: (message: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!email.trim() || !password) return;
+    if (!email.trim() || !password) {
+      setError("Ingresa tu correo y contraseña.");
+      return;
+    }
     setBusy(true);
+    setError("");
     setNotice("");
     try {
       const response = await fetch("/api/admin/auth/login", {
@@ -222,13 +232,13 @@ function LoginForm({ setNotice }: { setNotice: (message: string) => void }) {
         error?: string;
       };
       if (!response.ok || !body.token || !body.user) {
-        setNotice(body.error ?? "No se pudo iniciar sesión.");
+        setError(body.error ?? "No se pudo iniciar sesión.");
         return;
       }
       writeSession({ token: body.token, user: body.user });
       setNotice(`Bienvenido/a, ${body.user.name}.`);
     } catch {
-      setNotice("No se pudo iniciar sesión. Revisa tu conexión.");
+      setError("No se pudo iniciar sesión. Revisa tu conexión.");
     } finally {
       setBusy(false);
     }
@@ -237,8 +247,8 @@ function LoginForm({ setNotice }: { setNotice: (message: string) => void }) {
   return (
     <form className="admin-gate" onSubmit={submit}>
       <div>
-        <strong>Iniciar sesión</strong>
-        <p>Ingresa tu correo y contraseña para gestionar la tienda.</p>
+        <strong>Lanería El Siglo</strong>
+        <p>Accede al panel de administración.</p>
       </div>
       <label>
         <span className="admin-gate-label">Correo</span>
@@ -260,8 +270,9 @@ function LoginForm({ setNotice }: { setNotice: (message: string) => void }) {
           value={password}
         />
       </label>
+      {error && <p className="admin-gate-error">{error}</p>}
       <button disabled={busy} type="submit">
-        {busy ? "Ingresando…" : "Entrar"}
+        {busy ? "Ingresando…" : "Entrar al panel"}
       </button>
     </form>
   );
