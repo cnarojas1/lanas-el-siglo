@@ -40,7 +40,20 @@ export async function GET() {
   }
 
   const { results } = await env.DB.prepare(
-    "SELECT id, kv_key, filename, content_type, size, created_at, COALESCE(folder, 'Sin carpeta') AS folder FROM media ORDER BY folder COLLATE NOCASE, filename COLLATE NOCASE, id DESC"
+    `SELECT m.id,
+            m.kv_key,
+            m.filename,
+            m.content_type,
+            m.size,
+            m.created_at,
+            COALESCE(m.folder, 'Sin carpeta') AS folder
+       FROM media m
+       INNER JOIN (
+         SELECT COALESCE(folder, 'Sin carpeta') AS folder, size, MAX(id) AS id
+           FROM media
+          GROUP BY COALESCE(folder, 'Sin carpeta'), size
+       ) unique_media ON unique_media.id = m.id
+      ORDER BY folder COLLATE NOCASE, filename COLLATE NOCASE, id DESC`
   ).all<MediaRow>();
 
   return Response.json(
