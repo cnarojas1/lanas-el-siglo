@@ -596,6 +596,8 @@ type ImageTarget =
   | { kind: "variant"; id: number; code: string }
   | { kind: "bulk" };
 
+type MediaItem = { id: number; filename: string; folder: string; url: string };
+
 function ProductEditor({
   categories,
   canWrite,
@@ -613,9 +615,10 @@ function ProductEditor({
 }) {
   const [draft, setDraft] = useState<AdminProduct>(product);
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
-  const [mediaList, setMediaList] = useState<Array<{ id: number; filename: string; url: string }>>([]);
+  const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaSearch, setMediaSearch] = useState("");
+  const [mediaFolder, setMediaFolder] = useState("Todas");
   const [modalTab, setModalTab] = useState<"medios" | "subir">("medios");
   const [uploading, setUploading] = useState(false);
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -653,9 +656,7 @@ function ProductEditor({
       try {
         setMediaLoading(true);
         const response = await fetch("/api/admin/media");
-        const { media } = (await response.json()) as {
-          media: { id: number; filename: string; url: string }[];
-        };
+        const { media } = (await response.json()) as { media: MediaItem[] };
         if (!cancelled) setMediaList(media ?? []);
       } finally {
         if (!cancelled) setMediaLoading(false);
@@ -851,9 +852,17 @@ function ProductEditor({
     }
   }
 
-  const visibleMedia = mediaList.filter((media) =>
-    media.filename.toLowerCase().includes(mediaSearch.toLowerCase())
-  );
+  const mediaFolders = [
+    "Todas",
+    ...Array.from(new Set(mediaList.map((media) => media.folder || "Sin carpeta"))).sort((a, b) =>
+      a.localeCompare(b, "es")
+    ),
+  ];
+  const visibleMedia = mediaList.filter((media) => {
+    const text = `${media.folder} ${media.filename}`.toLowerCase();
+    const matchesFolder = mediaFolder === "Todas" || media.folder === mediaFolder;
+    return matchesFolder && text.includes(mediaSearch.toLowerCase());
+  });
 
   return (
     <>
@@ -1187,14 +1196,28 @@ function ProductEditor({
                 <p className="admin-media-empty">Cargando biblioteca…</p>
               ) : (
                 <>
-                  <input
-                    aria-label="Buscar imagen"
-                    className="admin-media-search"
-                    onChange={(event) => setMediaSearch(event.target.value)}
-                    placeholder="Buscar por nombre (ej: 'Favori', 'IMG')"
-                    type="text"
-                    value={mediaSearch}
-                  />
+                  <div className="admin-media-tools">
+                    <input
+                      aria-label="Buscar imagen"
+                      className="admin-media-search"
+                      onChange={(event) => setMediaSearch(event.target.value)}
+                      placeholder="Buscar por nombre o carpeta (ej: Favori, Kitty, IMG)"
+                      type="text"
+                      value={mediaSearch}
+                    />
+                    <select
+                      aria-label="Filtrar por carpeta"
+                      className="admin-media-folder-select"
+                      onChange={(event) => setMediaFolder(event.target.value)}
+                      value={mediaFolder}
+                    >
+                      {mediaFolders.map((folder) => (
+                        <option key={folder} value={folder}>
+                          {folder}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   {imageTarget.kind === "bulk" && (
                     <p className="admin-modal-hint">
                       Marca las fotos y revisa abajo el código y nombre de color antes de
@@ -1216,6 +1239,7 @@ function ProductEditor({
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img alt={media.filename} loading="lazy" src={`${media.url}?preview=${media.id}`} />
+                          <span className="admin-media-folder-label">{media.folder}</span>
                           <small>{media.filename}</small>
                         </button>
                       );

@@ -12,6 +12,7 @@ type MediaRow = {
   content_type: string;
   size: number;
   created_at: string;
+  folder: string;
 };
 
 function withUrl(row: MediaRow) {
@@ -39,7 +40,7 @@ export async function GET() {
   }
 
   const { results } = await env.DB.prepare(
-    "SELECT id, kv_key, filename, content_type, size, created_at FROM media ORDER BY created_at DESC, id DESC"
+    "SELECT id, kv_key, filename, content_type, size, created_at, COALESCE(folder, 'Sin carpeta') AS folder FROM media ORDER BY folder COLLATE NOCASE, filename COLLATE NOCASE, id DESC"
   ).all<MediaRow>();
 
   return Response.json(
