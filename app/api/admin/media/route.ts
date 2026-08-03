@@ -34,15 +34,26 @@ function slugify(filename: string) {
 
 /** GET /api/admin/media — lista la biblioteca. Lectura publica. */
 export async function GET() {
-  if (!env.DB) {
-    return Response.json({ error: "Base de datos no disponible." }, { status: 503 });
+  if (!env.DB || !env.MEDIA) {
+    return Response.json({ error: "Almacenamiento no disponible." }, { status: 503 });
   }
 
   const { results } = await env.DB.prepare(
     "SELECT id, kv_key, filename, content_type, size, created_at FROM media ORDER BY created_at DESC, id DESC"
   ).all<MediaRow>();
 
-  return Response.json({ media: results.map(withUrl) });
+  // D1 puede conservar filas de subidas antiguas/locales cuyo objeto ya no
+  // existe en R2. No las mostramos: en la biblioteca se ven como imagen rota.
+  const media: ReturnType<typeof withUrl>[] = [];
+  for (let index = 0; index < results.length; index += 25) {
+    const chunk = results.slice(index, index + 25);
+    const existing = await Promise.all(
+      chunk.map(async (row) => ((await env.MEDIA.get(row.kv_key)) ? withUrl(row) : null))
+    );
+    media.push(...existing.filter((row): row is ReturnType<typeof withUrl> => Boolean(row)));
+  }
+
+  return Response.json({ media });
 }
 
 /**
