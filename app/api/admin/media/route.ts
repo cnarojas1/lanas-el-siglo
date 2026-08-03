@@ -53,7 +53,10 @@ export async function GET() {
     media.push(...existing.filter((row): row is ReturnType<typeof withUrl> => Boolean(row)));
   }
 
-  return Response.json({ media });
+  return Response.json(
+    { media },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
+  );
 }
 
 /**

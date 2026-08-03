@@ -1215,7 +1215,7 @@ function ProductEditor({
                           type="button"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img alt={media.filename} loading="lazy" src={media.url} />
+                          <img alt={media.filename} loading="lazy" src={`${media.url}?preview=${media.id}`} />
                           <small>{media.filename}</small>
                         </button>
                       );
