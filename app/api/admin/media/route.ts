@@ -18,6 +18,27 @@ function withUrl(row: MediaRow) {
   return { ...row, url: `/api/media/${row.kv_key}` };
 }
 
+function readUint32LE(bytes: Uint8Array, offset: number) {
+  return bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
+}
+
+async function hasValidHeader(row: MediaRow) {
+  const bucket = env.MEDIA as unknown as {
+    get(key: string, options?: { range: { offset: number; length: number } }): Promise<{ body: ReadableStream } | null>;
+  };
+  const object = await bucket.get(row.kv_key, { range: { offset: 0, length: 16 } });
+  if (!object) return false;
+
+  if (row.content_type !== "image/webp") return true;
+
+  const bytes = new Uint8Array(await new Response(object.body).arrayBuffer());
+  if (bytes.length < 16) return false;
+  const riff = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+  const webp = bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+  const riffSize = readUint32LE(bytes, 4);
+  return riff && webp && riffSize === row.size - 8;
+}
+
 /** Nombre de archivo seguro para usar como clave de KV. */
 function slugify(filename: string) {
   const dot = filename.lastIndexOf(".");
@@ -49,11 +70,7 @@ export async function GET() {
   for (let index = 0; index < results.length; index += 25) {
     const chunk = results.slice(index, index + 25);
     const existing = await Promise.all(
-      chunk.map(async (row) => {
-        const object = await env.MEDIA.get(row.kv_key);
-        const objectSize = (object as { size?: number } | null)?.size;
-        return object && objectSize === row.size ? withUrl(row) : null;
-      })
+      chunk.map(async (row) => ((await hasValidHeader(row)) ? withUrl(row) : null))
     );
     media.push(...existing.filter((row): row is ReturnType<typeof withUrl> => Boolean(row)));
   }
