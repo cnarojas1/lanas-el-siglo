@@ -40,24 +40,19 @@ export async function GET() {
   }
 
   const { results } = await env.DB.prepare(
-    `SELECT m.id,
-            m.kv_key,
-            m.filename,
-            m.content_type,
-            m.size,
-            m.created_at,
-            COALESCE(m.folder, 'Sin carpeta') AS folder
-       FROM media m
-       INNER JOIN (
-         SELECT COALESCE(folder, 'Sin carpeta') AS folder, size, MAX(id) AS id
-           FROM media
-          GROUP BY COALESCE(folder, 'Sin carpeta'), size
-       ) unique_media ON unique_media.id = m.id
-      ORDER BY folder COLLATE NOCASE, filename COLLATE NOCASE, id DESC`
+    "SELECT id, kv_key, filename, content_type, size, created_at, COALESCE(folder, 'Sin carpeta') AS folder FROM media ORDER BY folder COLLATE NOCASE, filename COLLATE NOCASE, id DESC"
   ).all<MediaRow>();
 
+  const seen = new Set<string>();
+  const media = results.filter((row) => {
+    const key = `${row.folder || "Sin carpeta"}:${row.size}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return Response.json(
-    { media: results.map(withUrl) },
+    { media: media.map(withUrl) },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
   );
 }
