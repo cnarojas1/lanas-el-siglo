@@ -863,6 +863,13 @@ function ProductEditor({
     const matchesFolder = mediaFolder === "Todas" || media.folder === mediaFolder;
     return matchesFolder && text.includes(mediaSearch.toLowerCase());
   });
+  const groupedVisibleMedia = visibleMedia.reduce<Record<string, MediaItem[]>>((groups, media) => {
+    const folder = media.folder || "Sin carpeta";
+    groups[folder] = groups[folder] ?? [];
+    groups[folder].push(media);
+    return groups;
+  }, {});
+  const visibleMediaFolders = Object.keys(groupedVisibleMedia).sort((a, b) => a.localeCompare(b, "es"));
 
   return (
     <>
@@ -1224,27 +1231,40 @@ function ProductEditor({
                       agregarlas.
                     </p>
                   )}
-                  <div className="admin-media-grid-modal">
-                    {visibleMedia.map((media) => {
-                      const marked = picked.includes(media.url);
-                      return (
-                        <button
-                          aria-pressed={imageTarget.kind === "bulk" ? marked : undefined}
-                          className={
-                            marked ? "admin-media-card-modal admin-media-card-picked" : "admin-media-card-modal"
-                          }
-                          key={media.id}
-                          onClick={() => applyImage(media.url)}
-                          type="button"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img alt={media.filename} loading="lazy" src={`${media.url}?preview=${media.id}`} />
-                          <span className="admin-media-folder-label">{media.folder}</span>
-                          <small>{media.filename}</small>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {visibleMediaFolders.length === 0 ? (
+                    <p className="admin-media-empty">No hay medios para ese filtro.</p>
+                  ) : (
+                    <div className="admin-media-folder-groups">
+                      {visibleMediaFolders.map((folder) => (
+                        <section className="admin-media-folder-group" key={folder}>
+                          <div className="admin-media-folder-heading">
+                            <strong>{folder}</strong>
+                            <span>{groupedVisibleMedia[folder].length} imagen(es)</span>
+                          </div>
+                          <div className="admin-media-grid-modal">
+                            {groupedVisibleMedia[folder].map((media) => {
+                              const marked = picked.includes(media.url);
+                              return (
+                                <button
+                                  aria-pressed={imageTarget.kind === "bulk" ? marked : undefined}
+                                  className={
+                                    marked ? "admin-media-card-modal admin-media-card-picked" : "admin-media-card-modal"
+                                  }
+                                  key={media.id}
+                                  onClick={() => applyImage(media.url)}
+                                  type="button"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img alt={media.filename} loading="lazy" src={`${media.url}?preview=${media.id}`} />
+                                  <small>{media.filename}</small>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 

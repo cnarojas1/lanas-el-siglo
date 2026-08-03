@@ -2835,6 +2835,35 @@ footer small {
   gap: 12px;
 }
 
+.admin-media-folder-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.admin-media-folder-group {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.admin-media-folder-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.admin-media-folder-heading strong {
+  color: var(--forest);
+  font-size: 15px;
+}
+
+.admin-media-folder-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .admin-media-card-modal {
   display: flex;
   flex-direction: column;
