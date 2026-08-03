@@ -43,12 +43,17 @@ export async function GET() {
   ).all<MediaRow>();
 
   // D1 puede conservar filas de subidas antiguas/locales cuyo objeto ya no
-  // existe en R2. No las mostramos: en la biblioteca se ven como imagen rota.
+  // existe en R2, o cuyo binario quedo corrupto (size distinto al registrado).
+  // No las mostramos: en la biblioteca se ven como imagen rota.
   const media: ReturnType<typeof withUrl>[] = [];
   for (let index = 0; index < results.length; index += 25) {
     const chunk = results.slice(index, index + 25);
     const existing = await Promise.all(
-      chunk.map(async (row) => ((await env.MEDIA.get(row.kv_key)) ? withUrl(row) : null))
+      chunk.map(async (row) => {
+        const object = await env.MEDIA.get(row.kv_key);
+        const objectSize = (object as { size?: number } | null)?.size;
+        return object && objectSize === row.size ? withUrl(row) : null;
+      })
     );
     media.push(...existing.filter((row): row is ReturnType<typeof withUrl> => Boolean(row)));
   }
