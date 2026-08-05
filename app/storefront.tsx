@@ -244,7 +244,10 @@ export default function Storefront({ products, categories, siteContent, whatsapp
                   <span>{product.fiber}</span>
                 </div>
                 <div className="product-price">
-                  <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
+                  <div className="product-price-main">
+                    <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
+                    <span>Venta x mayor</span>
+                  </div>
                   {product.dozenPrice && <small>{product.dozenPrice}</small>}
                 </div>
               </div>
@@ -312,7 +315,15 @@ export default function Storefront({ products, categories, siteContent, whatsapp
         <a className="brand brand-logo footer-logo" href="#inicio">
           <Image src="/logo-el-siglo.jpg" alt="Lanería El Siglo" width={1600} height={694} unoptimized />
         </a>
-        <p>Fibras, color y calidez para cada proyecto.</p>
+        <div className="footer-locations" aria-label="Direcciones de locales">
+          <strong>Locales y direcciones</strong>
+          <address>
+            <span>21 de mayo 675, Santiago Centro</span>
+            <span>21 de mayo 657, Santiago Centro</span>
+            <span>Monumento 1947, Maipú</span>
+            <span>San Alfonso 56, Santiago</span>
+          </address>
+        </div>
         <div><a href="#catalogo">Catálogo</a><a href="#nosotros">Nosotros</a></div>
         <small>© 2026 Lanería El Siglo</small>
       </footer>
@@ -511,7 +522,10 @@ function ProductModal({
           </dl>
 
           <div className="product-modal-footer">
-            <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
+            <div className="product-modal-price-line">
+              <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
+              <span>Venta x mayor</span>
+            </div>
             {product.dozenPrice && <small>{product.dozenPrice}</small>}
             <button
               className="primary-button product-modal-add"
