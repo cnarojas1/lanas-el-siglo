@@ -9,6 +9,13 @@ const money = new Intl.NumberFormat("es-CL", {
   maximumFractionDigits: 0,
 });
 
+function searchableText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 type AdminProduct = {
   id: number;
   name: string;
@@ -859,9 +866,10 @@ function ProductEditor({
     ),
   ];
   const visibleMedia = mediaList.filter((media) => {
-    const text = `${media.folder} ${media.filename}`.toLowerCase();
+    const text = searchableText(`${media.folder} ${media.filename}`);
+    const search = searchableText(mediaSearch);
     const matchesFolder = mediaFolder === "Todas" || media.folder === mediaFolder;
-    return matchesFolder && text.includes(mediaSearch.toLowerCase());
+    return matchesFolder && text.includes(search);
   });
   const groupedVisibleMedia = visibleMedia.reduce<Record<string, MediaItem[]>>((groups, media) => {
     const folder = media.folder || "Sin carpeta";
