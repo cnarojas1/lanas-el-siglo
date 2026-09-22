@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { authorize } from "@/lib/admin-auth";
 
-type IncomingItem = { id: number; quantity: number };
+type IncomingItem = { id: number; quantity: number; variantId?: number | null };
 
 type QuotePayload = {
   name?: string;
@@ -39,21 +39,27 @@ export async function POST(request: Request) {
     return Response.json({ error: "JSON invalido." }, { status: 400 });
   }
 
-  // Se consolidan lineas repetidas del mismo producto.
-  const quantities = new Map<number, number>();
+  // Se consolidan lineas repetidas del mismo producto y variante.
+  const itemsMap = new Map<number, { quantity: number; variantId: number | null }>();
   for (const item of payload.items ?? []) {
     const id = Number(item?.id);
     const quantity = Math.floor(Number(item?.quantity));
+    const variantId = item.variantId ?? null;
     if (!Number.isInteger(id) || id <= 0) continue;
     if (!Number.isInteger(quantity) || quantity <= 0) continue;
-    quantities.set(id, Math.min((quantities.get(id) ?? 0) + quantity, MAX_UNITS_PER_LINE));
+    const existing = itemsMap.get(id);
+    if (existing) {
+      // Consolidar cantidades, mantener el variantId (si hay conflicto, usar el último)
+      itemsMap.set(id, {
+        quantity: Math.min(existing.quantity + quantity, MAX_UNITS_PER_LINE),
+        variantId, // Usar el variantId del item actual
+      });
+    } else {
+      itemsMap.set(id, { quantity, variantId });
+    }
   }
 
-  if (!quantities.size) {
-    return Response.json({ error: "La cotización no tiene productos." }, { status: 400 });
-  }
-
-  const ids = [...quantities.keys()];
+  const ids = [...itemsMap.keys()];
   const placeholders = ids.map(() => "?").join(", ");
 
   const { results: rows } = await env.DB.prepare(
@@ -63,16 +69,25 @@ export async function POST(request: Request) {
     .all<{ id: number; name: string; price: number }>();
 
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const known = [...quantities].filter(([id]) => byId.has(id));
+  // Filtrar solo los productos que existen y están visibles, manteniendo su variantId
+  const knownArray: Array<{ id: number; quantity: number; variantId: number | null }> = [];
+  for (const [id, value] of itemsMap.entries()) {
+    if (byId.has(id)) {
+      knownArray.push({ id, quantity: value.quantity, variantId: value.variantId });
+    }
+  }
 
-  if (!known.length) {
+  if (knownArray.length === 0) {
     return Response.json(
       { error: "Los productos de la cotización ya no están disponibles." },
       { status: 409 }
     );
   }
 
-  const total = known.reduce((sum, [id, quantity]) => sum + (byId.get(id)?.price ?? 0) * quantity, 0);
+  const total = knownArray.reduce(
+    (sum, item) => sum + (byId.get(item.id)?.price ?? 0) * item.quantity,
+    0
+  );
   const quoteId = crypto.randomUUID();
 
   const statements = [
@@ -88,11 +103,11 @@ export async function POST(request: Request) {
       (payload.notes ?? "").trim()
     ),
 
-    ...known.map(([id, quantity]) =>
+    ...knownArray.map((item) =>
       env.DB.prepare(
-        `INSERT INTO order_items (order_id, product_id, quantity, unit_price)
-         VALUES (?, ?, ?, ?)`
-      ).bind(quoteId, id, quantity, byId.get(id)?.price ?? 0)
+        `INSERT INTO order_items (order_id, product_id, quantity, unit_price, variant_id)
+         VALUES (?, ?, ?, ?, ?)`
+      ).bind(quoteId, item.id, item.quantity, byId.get(item.id)?.price ?? 0, item.variantId)
     ),
   ];
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
@@ -58,7 +58,7 @@ type ProductRow = {
   description: string;
 };
 
-type AdminSection = "resumen" | "productos" | "categorias" | "cotizaciones" | "usuarios";
+type AdminSection = "resumen" | "productos" | "categorias" | "cotizaciones" | "usuarios" | "configuracion";
 
 const adminSessionKey = "laneria-el-siglo-admin-session";
 
@@ -109,6 +109,7 @@ const NAV: { id: AdminSection; label: string }[] = [
   { id: "categorias", label: "Categorías" },
   { id: "cotizaciones", label: "Cotizaciones" },
   { id: "usuarios", label: "Usuarios" },
+  { id: "configuracion", label: "Configuración" },
 ];
 
 const roleName: Record<string, string> = {
@@ -206,6 +207,9 @@ export default function AdminPage() {
                   Solo un administrador puede gestionar usuarios.
                 </p>
               ))}
+            {activeSection === "configuracion" && (
+              <SettingsPanel canWrite={canWrite} session={session} setNotice={setNotice} />
+            )}
           </>
       </section>
     </main>
@@ -308,6 +312,97 @@ async function sessionFetch(session: { token: string } | null, url: string, init
     );
   }
   return { response, body };
+}
+
+function SettingsPanel({
+  canWrite,
+  session,
+  setNotice,
+}: {
+  canWrite: boolean;
+  session: { token: string } | null;
+  setNotice: (message: string) => void;
+}) {
+  const [whatsapp, setWhatsapp] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const response = await fetch("/api/admin/content");
+        const { content } = (await response.json()) as { content: Record<string, string> };
+        if (!cancelled) setWhatsapp((content.whatsappNumber ?? "").replace(/\D/g, ""));
+      } catch {
+        if (!cancelled) setNotice("No se pudo cargar la configuración.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function save() {
+    const digits = whatsapp.replace(/\D/g, "");
+    if (!digits) {
+      setNotice("Ingresa un número de WhatsApp válido.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await sessionFetch(session, "/api/admin/content", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ whatsappNumber: digits }),
+      });
+      setWhatsapp(digits);
+      setNotice("Número de WhatsApp actualizado. Las cotizaciones llegarán a ese número.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo guardar el número.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="admin-panel">
+      <div className="admin-panel-heading">
+        <div>
+          <p>Configuración</p>
+          <h2>Ajustes de la tienda</h2>
+        </div>
+      </div>
+      <p className="admin-panel-intro">
+        Número de WhatsApp al que llegan las cotizaciones de la tienda. Escríbelo solo con
+        dígitos, con código de país y sin signos (ej: 56995096522).
+      </p>
+      {loading ? (
+        <p className="admin-media-empty">Cargando configuración…</p>
+      ) : (
+        <div className="admin-category-row">
+          <input
+            aria-label="Número de WhatsApp para cotizaciones"
+            disabled={!canWrite}
+            inputMode="tel"
+            onChange={(event) => setWhatsapp(event.target.value)}
+            placeholder="56995096522"
+            value={whatsapp}
+          />
+          <span className="admin-category-total">WhatsApp</span>
+          {canWrite && (
+            <button disabled={busy || !whatsapp.trim()} onClick={save} type="button">
+              {busy ? "Guardando…" : "Guardar"}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function ResumenPanel({
@@ -469,6 +564,29 @@ function toAdminProduct(row: ProductRow): AdminProduct {
   };
 }
 
+function blankProduct(): AdminProduct {
+  return {
+    id: 0,
+    name: "",
+    category: "",
+    color: "",
+    fiber: "",
+    weight: "",
+    length: "",
+    needles: "",
+    crochet: "",
+    price: 0,
+    dozenPrice: "",
+    imageSource: "",
+    imagePosition: "center",
+    imageSize: "cover",
+    colorCount: 1,
+    allColors: "",
+    visible: true,
+    description: "",
+  };
+}
+
 function ProductsContainer({
   canWrite,
   session,
@@ -482,8 +600,25 @@ function ProductsContainer({
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newProduct, setNewProduct] = useState<AdminProduct | null>(null);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("Todas");
 
-  const selected = products.find((product) => product.id === selectedId) ?? products[0];
+  const filteredProducts = useMemo(() => {
+    const q = searchableText(searchFilter.trim());
+    return products.filter((p) => {
+      const matchCat = categoryFilter === "Todas" || p.category === categoryFilter;
+      const matchText =
+        !q ||
+        searchableText(
+          `${p.name} ${p.category} ${p.fiber} ${p.weight} ${p.allColors} ${p.dozenPrice} ${p.description}`
+        ).includes(q);
+      return matchCat && matchText;
+    });
+  }, [products, searchFilter, categoryFilter]);
+
+  const selected = products.find((product) => product.id === selectedId) ?? filteredProducts[0] ?? products[0];
 
   async function refresh() {
     try {
@@ -519,23 +654,91 @@ function ProductsContainer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function handleNewProduct() {
+    setCreating(true);
+    setNewProduct(blankProduct());
+  }
+
+  async function handleCreateProduct() {
+    setNotice("Producto creado.");
+    setCreating(false);
+    setNewProduct(null);
+    await refresh();
+  }
+
   if (loading) return <p className="admin-media-empty">Cargando productos…</p>;
 
   return (
     <section className="admin-grid admin-products-layout">
       <article className="admin-panel admin-products-list">
-        <div className="admin-panel-heading">
-          <div>
-            <p>Productos</p>
-            <h2>Listado de productos</h2>
+        <div className="admin-panel-heading admin-products-sticky-header">
+          <div className="admin-products-heading-top">
+            <div>
+              <p>Productos</p>
+              <h2>Listado de productos</h2>
+            </div>
+            {canWrite && (
+              <button
+                className="admin-btn-primary"
+                onClick={handleNewProduct}
+                type="button"
+              >
+                + Nuevo producto
+              </button>
+            )}
           </div>
-          <span className="admin-panel-count">{products.length} producto(s)</span>
+
+          <div className="admin-filter-bar">
+            <div className="admin-search-box">
+              <span className="admin-search-icon">🔍</span>
+              <input
+                className="admin-search-input"
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Buscar lana por nombre, código, fibra..."
+                type="search"
+                value={searchFilter}
+              />
+              {searchFilter && (
+                <button
+                  className="admin-search-clear"
+                  onClick={() => setSearchFilter("")}
+                  type="button"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <select
+              aria-label="Filtrar por categoría"
+              className="admin-category-select"
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              value={categoryFilter}
+            >
+              <option value="Todas">Todas las categorías ({products.length})</option>
+              {categories.map((cat) => {
+                const count = products.filter((p) => p.category === cat).length;
+                return (
+                  <option key={cat} value={cat}>
+                    {cat} ({count})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          <div className="admin-filter-count-row">
+            <span>
+              Mostrando <strong>{filteredProducts.length}</strong> de {products.length} productos
+            </span>
+          </div>
         </div>
-        {products.length === 0 ? (
-          <p className="admin-media-empty">No hay productos.</p>
+
+        {filteredProducts.length === 0 ? (
+          <p className="admin-media-empty">No se encontraron productos que coincidan con la búsqueda.</p>
         ) : (
           <div className="admin-table">
-            {products.map((product) => (
+            {filteredProducts.map((product) => (
               <button
                 className={
                   product.id === selected?.id
@@ -547,8 +750,13 @@ function ProductsContainer({
                 type="button"
               >
                 <ProductThumb product={product} />
-                <div>
-                  <strong>{product.name}</strong>
+                <div className="admin-row-info">
+                  <div className="admin-row-title-line">
+                    <strong>{product.name}</strong>
+                    {(product.name.toLowerCase().includes("trend cake") || product.dozenPrice?.toLowerCase().includes("paquete")) && (
+                      <span className="admin-pack-badge">📦 Paquete (3x200g)</span>
+                    )}
+                  </div>
                   <small className="admin-row-detail">
                     {product.weight} · {product.fiber || "—"} · {product.category}
                   </small>
@@ -561,7 +769,18 @@ function ProductsContainer({
         )}
       </article>
 
-      {selected && (
+      {creating && newProduct ? (
+        <ProductEditor
+          categories={categories}
+          canWrite={canWrite}
+          key="new"
+          mode="create"
+          product={newProduct}
+          session={session}
+          setNotice={setNotice}
+          onSaved={handleCreateProduct}
+        />
+      ) : selected ? (
         <ProductEditor
           categories={categories}
           canWrite={canWrite}
@@ -571,21 +790,26 @@ function ProductsContainer({
           setNotice={setNotice}
           onSaved={() => refresh()}
         />
-      )}
+      ) : null}
     </section>
   );
 }
 
 function ProductThumb({ product }: { product: AdminProduct }) {
+  const hasImage = Boolean(product.imageSource);
+  const isPhoto = product.imageSource?.startsWith("/api/media/") || product.imageSource?.startsWith("http");
   return (
     <span
       className="admin-thumb"
       style={{
-        backgroundImage: product.imageSource ? `url("${product.imageSource}")` : undefined,
-        backgroundPosition: product.imagePosition ?? "center",
-        backgroundSize: product.imageSize ?? "cover",
+        backgroundImage: hasImage ? `url("${product.imageSource}")` : undefined,
+        backgroundPosition: isPhoto ? "center" : (product.imagePosition === "0% 0%" ? "center" : (product.imagePosition || "center")),
+        backgroundSize: isPhoto ? "cover" : "cover",
       }}
-    />
+      title={product.name}
+    >
+      {!hasImage && <span className="admin-thumb-fallback">🧶</span>}
+    </span>
   );
 }
 
@@ -612,6 +836,7 @@ function ProductEditor({
   session,
   setNotice,
   onSaved,
+  mode,
 }: {
   categories: string[];
   canWrite: boolean;
@@ -619,6 +844,7 @@ function ProductEditor({
   session: { token: string } | null;
   setNotice: (message: string) => void;
   onSaved: () => void;
+  mode?: "create" | "edit";
 }) {
   const [draft, setDraft] = useState<AdminProduct>(product);
   const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
@@ -679,18 +905,20 @@ function ProductEditor({
     if (!canWrite) return;
     setSaving(true);
     try {
+      const method = mode === "create" ? "POST" : "PUT";
+      const body: Record<string, unknown> = {
+        name: draft.name,
+        category: draft.category,
+        price: draft.price,
+        description: draft.description,
+        visible: draft.visible,
+        image_source: draft.imageSource,
+      };
+      if (mode !== "create") body.id = draft.id;
       await sessionFetchGen("/api/admin/products", {
-        method: "PUT",
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: draft.id,
-          name: draft.name,
-          category: draft.category,
-          price: draft.price,
-          description: draft.description,
-          visible: draft.visible,
-          image_source: draft.imageSource,
-        }),
+        body: JSON.stringify(body),
       });
       setNotice(`"${draft.name}" guardado. Ya está actualizado en la tienda.`);
       onSaved();
@@ -825,12 +1053,18 @@ function ProductEditor({
     try {
       const form = new FormData();
       Array.from(files).forEach((file) => form.append("files", file));
+      form.append("folder", "Sin carpeta");
       const { body } = await sessionFetchGen("/api/admin/media", { method: "POST", body: form });
       const uploaded = (body as { uploaded: { url: string }[] }).uploaded ?? [];
-      if (!uploaded.length) {
+      const rejected = (body as { rejected: { filename: string; reason: string }[] }).rejected ?? [];
+      if (!uploaded.length && !rejected.length) {
         setNotice("No se subió ninguna imagen.");
         return;
       }
+      let message = "";
+      if (uploaded.length) message += `${uploaded.length} foto(s) subidas. `;
+      if (rejected.length) message += `${rejected.length} rechazada(s): ${rejected.map(r => `${r.filename} (${r.reason})`).join(", ")}.`;
+      setNotice(message);
       if (imageTarget?.kind === "bulk") {
         const uploadedUrls = uploaded.map((item) => item.url);
         setPicked((current) => {
@@ -848,12 +1082,71 @@ function ProductEditor({
           return [...current, ...fresh];
         });
         setModalTab("medios");
-        setNotice(`${uploaded.length} foto(s) subidas y marcadas.`);
         return;
       }
       applyImage(uploaded[0].url);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "No se pudo subir la imagen.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleFolderUpload(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      // Derive folder name from the first file's webkitRelativePath
+      let folder = "Sin carpeta";
+      const firstFile = files[0];
+      if (firstFile && "webkitRelativePath" in firstFile) {
+        const relativePath = (firstFile as { webkitRelativePath?: string }).webkitRelativePath;
+        if (relativePath) {
+          // webkitRelativePath is like "folder-name/image.jpg"
+          const folderName = relativePath.split("/")[0];
+          if (folderName) folder = folderName;
+        }
+      }
+      form.append("folder", folder);
+      Array.from(files).forEach((file) => form.append("files", file));
+      const { body } = await sessionFetchGen("/api/admin/media", { method: "POST", body: form });
+      const uploaded = (body as { uploaded: { url: string }[] }).uploaded ?? [];
+      const rejected = (body as { rejected: { filename: string; reason: string }[] }).rejected ?? [];
+      
+      if (!uploaded.length && !rejected.length) {
+        setNotice("No se subió ninguna imagen.");
+        return;
+      }
+      
+      let message = "";
+      if (uploaded.length) message += `${uploaded.length} foto(s) subidas a la carpeta "${folder}". `;
+      if (rejected.length) message += `${rejected.length} rechazada(s): ${rejected.map(r => `${r.filename} (${r.reason})`).join(", ")}.`;
+      setNotice(message);
+      
+      if (imageTarget?.kind === "bulk" && uploaded.length) {
+        const uploadedUrls = uploaded.map((item) => item.url);
+        setPicked((current) => {
+          const fresh = uploadedUrls.filter((url) => !current.includes(url));
+          setBulkDrafts((drafts) => {
+            const next = { ...drafts };
+            fresh.forEach((url, index) => {
+              next[url] = next[url] ?? {
+                code: suggestedBulkCode(current.length + index),
+                color_name: "",
+              };
+            });
+            return next;
+          });
+          return [...current, ...fresh];
+        });
+        setModalTab("medios");
+      } else if (!imageTarget?.kind && uploaded.length) {
+        // If no specific target, apply first image to main product
+        applyImage(uploaded[0].url);
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo subir la carpeta.");
     } finally {
       setUploading(false);
     }
@@ -984,13 +1277,61 @@ function ProductEditor({
                     onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })}
                   />
                 </label>
-                <label>
-                  <span>Precio docena</span>
+                <div className="admin-price-format-group">
+                  <div className="admin-price-format-header">
+                    <span>Precio secundario / formato</span>
+                    <select
+                      aria-label="Tipo de precio secundario"
+                      className="admin-format-type-select"
+                      onChange={(e) => {
+                        const type = e.target.value;
+                        if (type === "paquete") {
+                          setDraft({
+                            ...draft,
+                            dozenPrice: "Venta por paquete (3 ovillos de 200g) · Mín. mayorista: 5 paquetes",
+                          });
+                        } else if (type === "docena") {
+                          setDraft({
+                            ...draft,
+                            dozenPrice: draft.dozenPrice && draft.dozenPrice.includes("docena")
+                              ? draft.dozenPrice
+                              : draft.price > 0
+                              ? `${money.format(Math.round(draft.price * 1.2))} x docena`
+                              : "$ x docena",
+                          });
+                        } else if (type === "unidad") {
+                          setDraft({
+                            ...draft,
+                            dozenPrice: draft.price > 0 ? `${money.format(draft.price)} x unidad` : "$ x unidad",
+                          });
+                        } else {
+                          setDraft({ ...draft, dozenPrice: "" });
+                        }
+                      }}
+                      value={
+                        draft.dozenPrice?.toLowerCase().includes("paquete")
+                          ? "paquete"
+                          : draft.dozenPrice?.toLowerCase().includes("unidad")
+                          ? "unidad"
+                          : draft.dozenPrice?.toLowerCase().includes("docena")
+                          ? "docena"
+                          : draft.dozenPrice
+                          ? "otro"
+                          : "docena"
+                      }
+                    >
+                      <option value="unidad">Unidad</option>
+                      <option value="docena">Docena</option>
+                      <option value="paquete">Paquete</option>
+                      <option value="otro">Personalizado</option>
+                    </select>
+                  </div>
                   <input
-                    value={draft.dozenPrice}
                     onChange={(event) => setDraft({ ...draft, dozenPrice: event.target.value })}
+                    placeholder="Ej: $18.900 x docena, $3.500 x unidad, o Venta por paquete..."
+                    value={draft.dozenPrice}
                   />
-                </label>
+                </div>
               </div>
               <div className="admin-form-row">
                 <label>
@@ -1022,6 +1363,56 @@ function ProductEditor({
                   onChange={(event) => setDraft({ ...draft, description: event.target.value })}
                 />
               </label>
+
+              <div className="admin-package-config-box">
+                <div className="admin-package-config-header">
+                  <label className="admin-switch">
+                    <input
+                      checked={
+                        draft.name.toLowerCase().includes("trend cake") ||
+                        (draft.dozenPrice?.toLowerCase().includes("paquete") ?? false)
+                      }
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        if (enabled) {
+                          setDraft({
+                            ...draft,
+                            dozenPrice: "Venta por paquete (3 ovillos de 200g) · Mín. mayorista: 5 paquetes",
+                            description:
+                              draft.description ||
+                              "Cada paquete contiene 3 ovillos de 200g (total 600g por paquete). Venta mínima por mayor: 5 paquetes (colores a elección).",
+                          });
+                        } else {
+                          setDraft({
+                            ...draft,
+                            dozenPrice: "",
+                          });
+                        }
+                      }}
+                      type="checkbox"
+                    />
+                    <span>Venta por paquete (ej. Trend Cake)</span>
+                  </label>
+                </div>
+                {(draft.name.toLowerCase().includes("trend cake") ||
+                  (draft.dozenPrice?.toLowerCase().includes("paquete") ?? false)) && (
+                  <div className="admin-package-config-details">
+                    <p>
+                      📦 <strong>Especificaciones del paquete:</strong>
+                    </p>
+                    <ul>
+                      <li>
+                        Contenido: <strong>3 ovillos de 200g</strong> por paquete (600g total).
+                      </li>
+                      <li>
+                        Venta mínima por mayor: <strong>5 paquetes</strong> (colores a elección).
+                      </li>
+                    </ul>
+                    <small>Este formato se indicará en el catálogo, en la ficha del producto y en el pedido de WhatsApp.</small>
+                  </div>
+                )}
+              </div>
+
               {canWrite && (
                 <label className="admin-switch">
                   <input
@@ -1036,49 +1427,73 @@ function ProductEditor({
           </div>
         </article>
 
-        <section className="admin-panel admin-variants">
-          <div className="admin-variants-heading">
-            <div>
-              <span className="admin-field-label">Más fotos de este producto</span>
-              <p>
-                Un producto puede tener varias fotos: una por color. En la tienda salen como
-                círculos bajo la ficha y al pulsarlos cambia la imagen. Se guardan al momento,
-                sin pasar por &quot;Guardar cambios&quot;.
-              </p>
-            </div>
-            {canWrite && (
-              <div className="admin-variants-actions">
-                <button
-                  disabled={variantsBusy}
-                  onClick={() => {
-                    setPicked([]);
-                    setBulkDrafts({});
-                    setModalTab("medios");
-                    setImageTarget({ kind: "bulk" });
-                  }}
-                  type="button"
-                >
-                  Agregar fotos
-                </button>
-                <button
-                  className="admin-variants-secondary"
-                  disabled={variantsBusy}
-                  onClick={seedVariants}
-                  type="button"
-                >
-                  {variantsBusy ? "Trabajando…" : "Generar desde códigos"}
-                </button>
-              </div>
-            )}
-          </div>
+                <section className="admin-panel admin-variants">
+                  <div className="admin-variants-heading">
+                    <div>
+                      <span className="admin-field-label">Más fotos de este producto</span>
+                      <p>
+                        Un producto puede tener varias fotos: una por color. En la tienda salen como
+                        círculos bajo la ficha y al pulsarlos cambia la imagen. Se guardan al momento,
+                        sin pasar por &ldquo;Guardar cambios&rdquo;.
+                      </p>
+                    </div>
 
-          {!canWrite && (
-            <p className="admin-variants-locked">
-              Tu rol es de solo lectura: no puedes editar los colores de un producto.
-            </p>
-          )}
+                    {canWrite && (
+                      <div className="admin-variants-actions">
+                        <button
+                          disabled={variantsBusy}
+                          onClick={() => {
+                            setPicked([]);
+                            setBulkDrafts({});
+                            setModalTab("medios");
+                            setImageTarget({ kind: "bulk" });
+                          }}
+                          type="button"
+                        >
+                          Agregar fotos
+                        </button>
+                        <button
+                          className="admin-variants-secondary"
+                          disabled={variantsBusy}
+                          onClick={seedVariants}
+                          type="button"
+                        >
+                          {variantsBusy ? "Trabajando…" : "Generar desde códigos"}
+                        </button>
+                      </div>
+                    )}
 
-          {variants.length === 0 ? (
+                    <div className="admin-variants-actions" style={{ marginTop: 8 }}>
+                      {canWrite ? (
+                        <>
+                          <label className="admin-folder-upload-btn" title="Seleccionar una carpeta completa">
+                                              <input
+                                                type="file"
+                                                // webkitdirectory is a non-standard property for folder selection
+                                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                {...{ webkitdirectory: true } as any}
+                                                multiple
+                                                accept="image/*"
+                                                onChange={(e) => handleFolderUpload(e.target.files)}
+                                              />
+                                              Subir carpeta completa
+                                            </label>
+                        </>
+                      ) : (
+                        <p className="admin-variants-locked">
+                          Tu rol es de solo lectura: no puedes subir imágenes ni carpetas.
+                        </p>
+                      )}
+                    </div>
+
+                    {!canWrite && (
+                      <p className="admin-variants-locked">
+                        Tu rol es de solo lectura: no puedes editar los colores de un producto.
+                      </p>
+                    )}
+                  </div>
+
+                  {variants.length === 0 ? (
             <p className="admin-variants-empty">
               Todavía no hay colores. <strong>Agregar fotos</strong> te deja marcar varias
               imágenes de la biblioteca y crea un color por cada una.{" "}

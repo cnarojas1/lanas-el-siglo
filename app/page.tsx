@@ -139,13 +139,29 @@ async function loadSiteContent(): Promise<SiteContent> {
   }
 }
 
+/** Numero de WhatsApp editable desde /admin; ahi llegan las cotizaciones. */
+async function loadWhatsappNumber(): Promise<string> {
+  const fallback = ((env as { WHATSAPP_NUMBER?: string }).WHATSAPP_NUMBER ?? "").replace(/\D/g, "");
+  if (!env.DB) return fallback;
+
+  try {
+    const row = await env.DB.prepare(
+      "SELECT value FROM site_content WHERE key = 'whatsappNumber'"
+    ).first<{ value: string }>();
+    const saved = (row?.value ?? "").replace(/\D/g, "");
+    return saved || fallback;
+  } catch (error) {
+    console.error("No se pudo leer el numero de WhatsApp desde D1:", error);
+    return fallback;
+  }
+}
+
 export default async function Home() {
-  const [{ products, categories }, siteContent] = await Promise.all([
+  const [{ products, categories }, siteContent, whatsappNumber] = await Promise.all([
     loadCatalog(),
     loadSiteContent(),
+    loadWhatsappNumber(),
   ]);
-
-  const whatsappNumber = ((env as { WHATSAPP_NUMBER?: string }).WHATSAPP_NUMBER ?? "").replace(/\D/g, "");
 
   return (
     <Storefront

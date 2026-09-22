@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Product, ProductVariant } from "./catalog-data";
 import type { SiteContent } from "./site-content";
 
@@ -42,7 +42,9 @@ type StorefrontProps = {
 export default function Storefront({ products, categories, siteContent, whatsappNumber }: StorefrontProps) {
   const [category, setCategory] = useState("Todas");
   const [query, setQuery] = useState("");
-  const [cart, setCart] = useState<Record<number, number>>({});
+  // Cart now stores entries keyed by "productId:variantId" (variantId optional)
+  // Cart stores quantity keyed by "productId:variantId" (variantId optional)
+  const [cart, setCart] = useState<Record<string, number>>({});
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
@@ -50,6 +52,8 @@ export default function Storefront({ products, categories, siteContent, whatsapp
   const [chosenColor, setChosenColor] = useState<Record<number, number>>({});
   // Producto abierto en el detalle emergente (pop-up).
   const [openProduct, setOpenProduct] = useState<Product | null>(null);
+  // Modal de precios y condiciones de venta por mayor
+  const [wholesaleOpen, setWholesaleOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -59,38 +63,68 @@ export default function Storefront({ products, categories, siteContent, whatsapp
       return matchesCategory && matchesText;
     });
   }, [category, query, products]);
+  // Helper to build a cart key (productId:variantId) – variantId may be undefined
+  const cartKey = (id: number, variantId?: number) => `${id}:${variantId ?? ''}`;
 
-  const cartItems = products.filter((product) => cart[product.id]);
-  const cartCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
-  const cartTotal = cartItems.reduce((sum, product) => sum + product.price * cart[product.id], 0);
+  // Build a flat list of cart entries from the composite cart map
+  const cartEntries = Object.entries(cart).map(([key, quantity]) => {
+    const [pidStr, vidStr] = key.split(":");
+    const pid = Number(pidStr);
+    const vid = vidStr ? Number(vidStr) : undefined;
+    const product = products.find((p) => p.id === pid);
+    return product ? { product, quantity, variantId: vid } : null;
+  }).filter((e): e is { product: Product; quantity: number; variantId: number | undefined } => !!e);
 
-  function addToCart(id: number) {
-    setCart((current) => ({ ...current, [id]: (current[id] ?? 0) + 1 }));
+  const cartCount = cartEntries.reduce((sum, entry) => sum + entry.quantity, 0);
+  const cartTotal = cartEntries.reduce((sum, entry) => sum + entry.product.price * entry.quantity, 0);
+
+  function addToCart(id: number, variantId?: number) {
+    // Resolve which variant id to use for the cart entry
+    const resolvedVariantId =
+      variantId !== undefined
+        ? variantId
+        : chosenColor[id] ??
+          (products.find((p) => p.id === id)?.variants?.[0]?.id as number | undefined);
+
+    setCart((current) => {
+      const key = cartKey(id, resolvedVariantId);
+      return { ...current, [key]: (current[key] ?? 0) + 1 };
+    });
+
+    // Update chosenColor state so UI shows the selected variant
+    if (resolvedVariantId !== undefined) {
+      setChosenColor((current) => ({ ...current, [id]: resolvedVariantId }));
+    }
+
     setNotice("Producto agregado a tu bolsa");
     window.setTimeout(() => setNotice(""), 1800);
   }
 
-  function updateQuantity(id: number, change: number) {
+  // Update quantity for a specific product+variant entry
+  function updateQuantity(id: number, variantId: number | undefined, change: number) {
+    const key = cartKey(id, variantId);
     setCart((current) => {
-      const next = Math.max(0, (current[id] ?? 0) + change);
+      const next = Math.max(0, (current[key] ?? 0) + change);
       const updated = { ...current };
-      if (next === 0) delete updated[id];
-      else updated[id] = next;
+      if (next === 0) delete updated[key];
+      else updated[key] = next;
       return updated;
     });
   }
 
   /** Mensaje de la cotizacion, tal como llegara al WhatsApp de la tienda. */
   const quoteMessage = useMemo(() => {
-    const lines = cartItems
-      .map((product) => {
-        const variant = selectedVariant(product, chosenColor);
+    const lines = cartEntries
+      .map(({ product, quantity, variantId }) => {
+        const variant = variantId !== undefined ? product.variants?.find(v => v.id === variantId) : undefined;
         const color = variant ? ` (color ${swatchLabel(variant)})` : "";
-        return `• ${cart[product.id]} × ${product.name}${color} — ${money.format(product.price * cart[product.id])}`;
+        const isPack = product.name.toLowerCase().includes("trend cake") || product.dozenPrice?.toLowerCase().includes("paquete");
+        const packLabel = isPack ? " [Venta por paquete: 3 ovillos de 200g]" : "";
+        return `• ${quantity} × ${product.name}${packLabel}${color} — ${money.format(product.price * quantity)}`;
       })
       .join("\n");
     return `Hola, quisiera cotizar:\n\n${lines}\n\nTotal referencial: ${money.format(cartTotal)}`;
-  }, [cartItems, cart, cartTotal, chosenColor]);
+  }, [cartEntries, cartTotal]);
 
   const whatsappHref = whatsappNumber
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(quoteMessage)}`
@@ -101,13 +135,17 @@ export default function Storefront({ products, categories, siteContent, whatsapp
    * WhatsApp: si el registro falla, el cliente igual envia su mensaje.
    */
   function recordQuote() {
-    if (!cartItems.length) return;
+    if (!cartEntries.length) return;
 
     fetch("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items: cartItems.map((product) => ({ id: product.id, quantity: cart[product.id] })),
+        items: cartEntries.map(({ product, quantity, variantId }) => ({
+          id: product.id,
+          quantity,
+          variantId: variantId ?? null,
+        })),
       }),
       keepalive: true,
     }).catch(() => {
@@ -128,7 +166,7 @@ export default function Storefront({ products, categories, siteContent, whatsapp
 
   return (
     <main data-version={DEPLOY_VERSION}>
-      <div className="shipping-bar">Despacho a todo Chile · Envío gratis sobre $45.000</div>
+      <div className="shipping-bar" />
 
       <header className="site-header">
         <a className="brand brand-logo" href="#inicio" aria-label="Lanería El Siglo, inicio">
@@ -142,6 +180,16 @@ export default function Storefront({ products, categories, siteContent, whatsapp
           <a href="#inicio" onClick={() => setMenuOpen(false)}>Inicio</a>
           <a href="#catalogo" onClick={() => setMenuOpen(false)}>Catálogo</a>
           <a href="#nosotros" onClick={() => setMenuOpen(false)}>Nosotros</a>
+          <button
+            type="button"
+            className="nav-link-btn"
+            onClick={() => {
+              setMenuOpen(false);
+              setWholesaleOpen(true);
+            }}
+          >
+            Mayoristas
+          </button>
         </nav>
         <button className="bag-button" onClick={() => setCartOpen(true)} aria-label={`Abrir bolsa, ${cartCount} productos`}>
           <span>Bolsa</span>
@@ -154,7 +202,16 @@ export default function Storefront({ products, categories, siteContent, whatsapp
           <p className="eyebrow">{siteContent.heroEyebrow}</p>
           <h1>{siteContent.heroTitle}</h1>
           <p className="hero-text">{siteContent.heroText}</p>
-          <a className="primary-button" href="#catalogo">{siteContent.heroCta}</a>
+          <div className="hero-cta-group">
+            <a className="primary-button" href="#catalogo">{siteContent.heroCta}</a>
+            <button
+              type="button"
+              className="hero-wholesale-btn"
+              onClick={() => setWholesaleOpen(true)}
+            >
+              🏷️ Precio mayorista
+            </button>
+          </div>
           <div className="hero-details" aria-label="Beneficios">
             <span>Fibras seleccionadas</span>
             <span>Despacho nacional</span>
@@ -169,6 +226,7 @@ export default function Storefront({ products, categories, siteContent, whatsapp
             <p className="eyebrow">ELIGE TU FAVORITA</p>
             <h2>{siteContent.catalogTitle}</h2>
           </div>
+          <Image src="/oren-bayan-logo.png" alt="Ören Bayan" className="catalog-brand-mark" width={998} height={1035} unoptimized />
           <p>{siteContent.catalogIntro}</p>
         </div>
 
@@ -198,6 +256,9 @@ export default function Storefront({ products, categories, siteContent, whatsapp
                 style={imageStyle(product, chosenColor[product.id])}
               >
                 {index < 2 && <span className="product-badge">{index === 0 ? "Más vendido" : "Nuevo"}</span>}
+                {(product.name.toLowerCase().includes("trend cake") || product.dozenPrice?.toLowerCase().includes("paquete")) && (
+                  <span className="product-badge product-package-badge-card">📦 3 ovillos de 200g</span>
+                )}
                 <button
                   onClick={(event) => {
                     event.stopPropagation();
@@ -218,38 +279,42 @@ export default function Storefront({ products, categories, siteContent, whatsapp
                 <div>
                   <p>{product.category} · {product.weight}</p>
                   <h3>{product.name}</h3>
-                  {product.variants?.length ? (
-                    <div className="product-card-color-strip" aria-label={`Colores de ${product.name}`}>
-                      {product.variants.map((variant) => (
-                        <button
-                          aria-label={`Elegir color ${swatchLabel(variant)}`}
-                          aria-pressed={chosenColor[product.id] === variant.id}
-                          className={
-                            chosenColor[product.id] === variant.id
-                              ? "product-card-color-thumb product-card-color-thumb-active"
-                              : "product-card-color-thumb"
-                          }
-                          key={variant.id}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setChosenColor((current) => ({ ...current, [product.id]: variant.id }));
-                          }}
-                          style={{ backgroundImage: `url("${variant.imageSource}")` }}
-                          title={swatchLabel(variant)}
-                          type="button"
-                        />
-                      ))}
-                    </div>
-                  ) : null}
                   <span>{product.fiber}</span>
                 </div>
                 <div className="product-price">
                   <div className="product-price-main">
                     <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
-                    <span>Venta x mayor</span>
+                    <span>
+                      {(product.name.toLowerCase().includes("trend cake") || product.dozenPrice?.toLowerCase().includes("paquete"))
+                        ? "Venta x paquete"
+                        : "Venta x mayor"}
+                    </span>
                   </div>
                   {product.dozenPrice && <small>{product.dozenPrice}</small>}
                 </div>
+                {product.variants?.length ? (
+                  <div className="product-card-color-strip" aria-label={`Colores de ${product.name}`}>
+                    {product.variants.map((variant) => (
+                      <button
+                        aria-label={`Elegir color ${swatchLabel(variant)}`}
+                        aria-pressed={chosenColor[product.id] === variant.id}
+                        className={
+                          chosenColor[product.id] === variant.id
+                            ? "product-card-color-thumb product-card-color-thumb-active"
+                            : "product-card-color-thumb"
+                        }
+                        key={variant.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setChosenColor((current) => ({ ...current, [product.id]: variant.id }));
+                        }}
+                        style={{ backgroundImage: `url("${variant.imageSource}")` }}
+                        title={swatchLabel(variant)}
+                        type="button"
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </article>
           ))}
@@ -260,10 +325,9 @@ export default function Storefront({ products, categories, siteContent, whatsapp
       <section className="promo-banners" aria-label="Colecciones destacadas">
         <article className="promo-banner promo-kit">
           <div className="promo-copy promo-copy-light">
-            <p className="eyebrow">TODO PARA COMENZAR</p>
+            <p className="eyebrow">Todo comenzó hace más de 14 años.</p>
             <h2>{siteContent.bannerKitTitle}</h2>
             <p>{siteContent.bannerKitText}</p>
-            <a href="#catalogo">{siteContent.bannerKitCta} <span aria-hidden="true">→</span></a>
           </div>
         </article>
         <article className="promo-banner promo-colors">
@@ -321,10 +385,20 @@ export default function Storefront({ products, categories, siteContent, whatsapp
             <span>21 de mayo 675, Santiago Centro</span>
             <span>21 de mayo 657, Santiago Centro</span>
             <span>Monumento 1947, Maipú</span>
-            <span>San Alfonso 56, Santiago</span>
+            <span>San Alfonso 51, Santiago</span>
           </address>
         </div>
-        <div><a href="#catalogo">Catálogo</a><a href="#nosotros">Nosotros</a></div>
+        <div>
+          <a href="#catalogo">Catálogo</a>
+          <a href="#nosotros">Nosotros</a>
+          <button
+            type="button"
+            className="footer-link-btn"
+            onClick={() => setWholesaleOpen(true)}
+          >
+            Mayoristas
+          </button>
+        </div>
         <small>© 2026 Lanería El Siglo</small>
       </footer>
 
@@ -335,29 +409,32 @@ export default function Storefront({ products, categories, siteContent, whatsapp
           <button onClick={() => setCartOpen(false)} aria-label="Cerrar">×</button>
         </div>
         <div className="cart-content">
-          {cartItems.length === 0 ? (
+          {cartEntries.length === 0 ? (
             <div className="empty-cart"><span>○</span><h3>Tu bolsa está vacía</h3><p>Agrega algunas lanas para comenzar tu próximo proyecto.</p><button onClick={() => setCartOpen(false)}>Explorar catálogo</button></div>
           ) : (
-            cartItems.map((product) => {
-              const pickedVariant = selectedVariant(product, chosenColor);
+            cartEntries.map((entry) => {
+              const { product, quantity, variantId } = entry;
+              const pickedVariant = variantId !== undefined ? product.variants?.find(v => v.id === variantId) : undefined;
+              const key = `${product.id}:${variantId ?? ''}`;
               return (
-                <article className="cart-item" key={product.id}>
+                <article className="cart-item" key={key}>
                   <div
                     className="cart-thumb"
                     style={{
-                      ...imageStyle(product, chosenColor[product.id]),
+                      ...imageStyle(product, variantId ?? chosenColor[product.id]),
                     }}
                   />
                   <div>
                     <h3>{product.name}</h3>
-                    <p>
-                      {pickedVariant ? `Color: ${swatchLabel(pickedVariant)}` : product.color} · {product.weight}
-                    </p>
+                    <div>
+                      <p>{product.category} · {product.weight}</p>
+                      {pickedVariant && <p>Color: {swatchLabel(pickedVariant)}</p>}
+                    </div>
                     <strong>{money.format(product.price)}</strong>
                     <div className="quantity">
-                      <button onClick={() => updateQuantity(product.id, -1)} aria-label="Quitar uno">−</button>
-                      <span>{cart[product.id]}</span>
-                      <button onClick={() => updateQuantity(product.id, 1)} aria-label="Agregar uno">+</button>
+                      <button onClick={() => updateQuantity(product.id, variantId, -1)} aria-label="Quitar uno">−</button>
+                      <span>{quantity}</span>
+                      <button onClick={() => updateQuantity(product.id, variantId, 1)} aria-label="Agregar uno">+</button>
                     </div>
                   </div>
                 </article>
@@ -365,7 +442,7 @@ export default function Storefront({ products, categories, siteContent, whatsapp
             })
           )}
         </div>
-        {cartItems.length > 0 && (
+        {cartEntries.length > 0 && (
           <div className="cart-summary">
             <div><span>Total referencial</span><strong>{money.format(cartTotal)}</strong></div>
             <p>Te confirmamos disponibilidad, despacho y forma de pago por WhatsApp.</p>
@@ -394,16 +471,17 @@ export default function Storefront({ products, categories, siteContent, whatsapp
           chosenColor={chosenColor[openProduct.id]}
           onClose={() => setOpenProduct(null)}
           onAdd={(variantId) => {
-            if (variantId) {
-              setChosenColor((current) => ({ ...current, [openProduct.id]: variantId }));
-            }
-            addToCart(openProduct.id);
+            addToCart(openProduct.id, variantId);
             setOpenProduct(null);
           }}
           onPickColor={(variantId) =>
             setChosenColor((current) => ({ ...current, [openProduct.id]: variantId }))
           }
         />
+      )}
+
+      {wholesaleOpen && (
+        <WholesaleModal onClose={() => setWholesaleOpen(false)} />
       )}
     </main>
   );
@@ -513,6 +591,21 @@ function ProductModal({
             </p>
           )}
 
+          {(product.name.toLowerCase().includes("trend cake") || product.dozenPrice?.toLowerCase().includes("paquete")) && (
+            <div className="product-package-box">
+              <div className="product-package-header">
+                <span className="product-package-icon">📦</span>
+                <strong>Venta por Paquete</strong>
+              </div>
+              <p className="product-package-text">
+                Cada paquete contiene <strong>3 ovillos de 200g</strong> (total 600g por paquete).
+              </p>
+              <p className="product-package-rule">
+                🏷️ <strong>Venta mínima por mayor:</strong> 5 paquetes (colores a elección 🙌🏻).
+              </p>
+            </div>
+          )}
+
           <dl className="product-modal-spec-line">
             <div><dt>Composición</dt><dd>{product.fiber || "—"}</dd></div>
             <div><dt>Gramaje</dt><dd>{product.weight}</dd></div>
@@ -524,7 +617,11 @@ function ProductModal({
           <div className="product-modal-footer">
             <div className="product-modal-price-line">
               <strong>{product.price > 0 ? money.format(product.price) : "Consultar"}</strong>
-              <span>Venta x mayor</span>
+              <span>
+                {(product.name.toLowerCase().includes("trend cake") || product.dozenPrice?.toLowerCase().includes("paquete"))
+                  ? "Venta x paquete"
+                  : "Venta x mayor"}
+              </span>
             </div>
             {product.dozenPrice && <small>{product.dozenPrice}</small>}
             <button
@@ -540,3 +637,74 @@ function ProductModal({
     </div>
   );
 }
+
+function WholesaleModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="product-modal-overlay wholesale-modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="wholesale-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wholesale-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button className="wholesale-modal-close" onClick={onClose} aria-label="Cerrar" type="button">
+          ×
+        </button>
+
+        <div className="wholesale-modal-header">
+          <span className="wholesale-modal-badge">🧶 Venta por mayor</span>
+          <h2 id="wholesale-modal-title">Precios y condiciones por mayor</h2>
+        </div>
+
+        <div className="wholesale-modal-body">
+          <div className="wholesale-info-card">
+            <div className="wholesale-card-icon">1</div>
+            <div className="wholesale-card-text">
+              <strong>Condición inicial de compra</strong>
+              <p>
+                Para venta por mayor, la condición inicial es de <strong>3 kg de un mismo artículo</strong>, y puedes elegir <strong>hasta 6 colores distintos</strong> dentro de esos 3 kg 🙌🏻
+              </p>
+            </div>
+          </div>
+
+          <div className="wholesale-info-card">
+            <div className="wholesale-card-icon">2</div>
+            <div className="wholesale-card-text">
+              <strong>Combina tu pedido libremente</strong>
+              <p>
+                Una vez cumplido ese mínimo, puedes seguir agregando <strong>desde 1 kg</strong> del artículo o color que quieras, combinando tu pedido como prefieras 🧶✨
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="wholesale-modal-footer">
+          <a
+            href="#catalogo"
+            className="primary-button wholesale-cta-btn"
+            onClick={onClose}
+          >
+            Ver catálogo
+          </a>
+          <button
+            type="button"
+            className="wholesale-close-btn"
+            onClick={onClose}
+          >
+            Entendido
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

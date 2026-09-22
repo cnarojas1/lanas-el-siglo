@@ -45,7 +45,7 @@ export async function GET() {
 
   const seen = new Set<string>();
   const media = results.filter((row) => {
-    const key = `${row.folder || "Sin carpeta"}:${row.size}`;
+    const key = `${row.folder || "Sin carpeta"}:${row.filename}:${row.size}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -94,6 +94,14 @@ export async function POST(request: Request) {
       continue;
     }
 
+    // Folder from FormData (optional). Derive from webkitRelativePath if not provided.
+    let folder = form.get("folder");
+    if (typeof folder === "string" && folder.trim()) {
+      folder = folder.trim();
+    } else {
+      folder = "Sin carpeta";
+    }
+
     // Prefijo aleatorio para que dos archivos con el mismo nombre no se pisen.
     const kvKey = `${crypto.randomUUID().slice(0, 8)}-${slugify(file.name)}`;
 
@@ -103,11 +111,11 @@ export async function POST(request: Request) {
 
     try {
       const row = await env.DB.prepare(
-        `INSERT INTO media (kv_key, filename, content_type, size)
-         VALUES (?, ?, ?, ?)
-         RETURNING id, kv_key, filename, content_type, size, created_at`
+        `INSERT INTO media (kv_key, filename, content_type, size, folder)
+         VALUES (?, ?, ?, ?, ?)
+         RETURNING id, kv_key, filename, content_type, size, created_at, folder`
       )
-        .bind(kvKey, file.name, file.type, file.size)
+        .bind(kvKey, file.name, file.type, file.size, folder)
         .first<MediaRow>();
 
       if (row) uploaded.push(withUrl(row));

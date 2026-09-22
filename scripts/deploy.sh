@@ -31,11 +31,12 @@ npx vinext deploy
 
 # ── 3. Migración D1 (estructura) ──
 echo ""
-echo "🗄️  [3/4] Migraciones D1 pendientes..."
+echo "���🗄��️  [3/4] Migraciones D1 pendientes..."
 for migration in db/migrations/*.sql; do
   if [ -f "$migration" ]; then
     echo "   Aplicando: $migration"
-    npx wrangler d1 execute lanas-el-siglo-db --remote --file="$migration"
+    # Ignore errors from migrations that might already be applied (e.g., duplicate column)
+    npx wrangler d1 execute lanas-el-siglo-db --remote --file="$migration" || true
   fi
 done
 

@@ -7,12 +7,12 @@
  */
 export const defaultSiteContent = {
   bannerKitCta: "Explorar kits",
-  bannerKitText: "Elige tus ovillos favoritos y encuentra los básicos para darle forma a tu próxima idea.",
-  bannerKitTitle: "Arma tu primer kit de tejido",
+  bannerKitText: "Descubre una colección de colores, texturas y diseños pensados para inspirar tu creatividad y transformar cada tejido en una creación única.",
+  bannerKitTitle: "Acercamos a Chile\nla tradición y calidad\nde las mejores lanas de\nEgipto y Turquía.",
   bannerColorsCta: "Ver colores",
   bannerColorsText: "Terracotas, verdes y rosas suaves para combinar sin complicaciones.",
   bannerColorsTitle: "Colores que se sienten tan bien como se ven",
-  catalogIntro: "Listado actualizado desde la planilla: composición, gramaje, metraje, palillos, crochet y colores disponibles.",
+  catalogIntro: "Explora nuestros productos por composición, gramaje, metraje y colores disponibles",
   catalogTitle: "Catálogo de productos",
   faqAnswer: "Despachamos a todo Chile. Los tiempos y costos se confirman al cerrar la compra.",
   faqQuestion: "¿Realizan despachos?",
