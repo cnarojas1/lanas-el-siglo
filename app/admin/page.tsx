@@ -929,6 +929,28 @@ function ProductEditor({
     }
   }
 
+  async function toggleVisibility() {
+    if (!canWrite) return;
+    const nextVisible = !draft.visible;
+    setDraft((prev) => ({ ...prev, visible: nextVisible }));
+    if (mode === "create") return;
+    try {
+      await sessionFetchGen("/api/admin/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: draft.id, visible: nextVisible }),
+      });
+      setNotice(
+        nextVisible
+          ? `"${draft.name}" ahora está VISIBLE en la tienda.`
+          : `"${draft.name}" ahora está OCULTO en la tienda.`
+      );
+      onSaved();
+    } catch {
+      setNotice("No se pudo actualizar la visibilidad.");
+    }
+  }
+
   const declaredCodes = (draft.allColors ?? "")
     .split(",")
     .map((code) => code.trim())
@@ -1430,7 +1452,20 @@ function ProductEditor({
                 <section className="admin-panel admin-variants">
                   <div className="admin-variants-heading">
                     <div>
-                      <span className="admin-field-label">Más fotos de este producto</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
+                        <span className="admin-field-label" style={{ margin: 0 }}>Más fotos de este producto</span>
+                        {canWrite && (
+                          <button
+                            type="button"
+                            className={`admin-visibility-toggle-btn ${draft.visible ? "admin-visible-active" : "admin-visible-inactive"}`}
+                            onClick={toggleVisibility}
+                            title={draft.visible ? "Pulsar para ocultar producto en la tienda" : "Pulsar para hacer visible en la tienda"}
+                          >
+                            <span className="admin-vis-indicator" />
+                            {draft.visible ? "Visible en tienda" : "Oculto en tienda"}
+                          </button>
+                        )}
+                      </div>
                       <p>
                         Un producto puede tener varias fotos: una por color. En la tienda salen como
                         círculos bajo la ficha y al pulsarlos cambia la imagen. Se guardan al momento,
@@ -1460,31 +1495,20 @@ function ProductEditor({
                         >
                           {variantsBusy ? "Trabajando…" : "Generar desde códigos"}
                         </button>
+                        <label className="admin-folder-upload-btn" title="Seleccionar una carpeta completa">
+                          <input
+                            type="file"
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            {...{ webkitdirectory: "true" } as any}
+                            multiple
+                            accept="image/*"
+                            onChange={(e) => handleFolderUpload(e.target.files)}
+                            style={{ display: "none" }}
+                          />
+                          📁 Subir carpeta
+                        </label>
                       </div>
                     )}
-
-                    <div className="admin-variants-actions" style={{ marginTop: 8 }}>
-                      {canWrite ? (
-                        <>
-                          <label className="admin-folder-upload-btn" title="Seleccionar una carpeta completa">
-                                              <input
-                                                type="file"
-                                                // webkitdirectory is a non-standard property for folder selection
-                                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                {...{ webkitdirectory: true } as any}
-                                                multiple
-                                                accept="image/*"
-                                                onChange={(e) => handleFolderUpload(e.target.files)}
-                                              />
-                                              Subir carpeta completa
-                                            </label>
-                        </>
-                      ) : (
-                        <p className="admin-variants-locked">
-                          Tu rol es de solo lectura: no puedes subir imágenes ni carpetas.
-                        </p>
-                      )}
-                    </div>
 
                     {!canWrite && (
                       <p className="admin-variants-locked">

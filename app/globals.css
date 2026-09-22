@@ -3413,6 +3413,87 @@ footer small {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.admin-visibility-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  line-height: 1;
+}
+
+.admin-visibility-toggle-btn.admin-visible-active {
+  background: #edf7ee;
+  color: #1b5e20;
+  border-color: #b7e1be;
+}
+
+.admin-visibility-toggle-btn.admin-visible-active:hover {
+  background: #ddf0df;
+  border-color: #92d39c;
+}
+
+.admin-visibility-toggle-btn.admin-visible-inactive {
+  background: #fdf0ed;
+  color: #c0392b;
+  border-color: #f5c4be;
+}
+
+.admin-visibility-toggle-btn.admin-visible-inactive:hover {
+  background: #fbe3de;
+  border-color: #ec9e94;
+}
+
+.admin-vis-indicator {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.admin-visible-active .admin-vis-indicator {
+  background: #2e7d32;
+  box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.25);
+}
+
+.admin-visible-inactive .admin-vis-indicator {
+  background: #c62828;
+  box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.25);
+}
+
+.admin-folder-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: #4a433d;
+  padding: 10px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.admin-folder-upload-btn:hover {
+  border-color: var(--terracotta);
+  color: var(--terracotta);
+  background: #fff8f5;
+}
+
+.admin-folder-upload-btn input {
+  display: none !important;
 }
 
 .admin-variants-actions button {
